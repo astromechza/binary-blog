@@ -5,11 +5,11 @@ use convert_case::{Case, Casing};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use lazy_static::lazy_static;
-use pulldown_cmark::{html, Options, Parser as CmarkParser};
 use regex::Regex;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::{IpAddr, SocketAddr};
+use maud::{html, Markup, DOCTYPE};
 
 pub mod posts;
 
@@ -46,27 +46,57 @@ lazy_static! {
     };
 }
 
+fn check_method(_req: Request<Body>, allowed: &Method) -> Option<Response<Body>> {
+    if _req.method() == allowed {
+        return None;
+    }
+    Some(Response::builder().status(405).body(Body::empty()).unwrap())
+}
+
+fn generate(title: String, inner: Markup) -> Markup {
+    html! {
+        (DOCTYPE)
+        html {
+            head {
+                meta charset="utf-8";
+                title { (title) }
+            }
+            body {
+                { (inner) }
+            }
+        }
+    }
+}
+
+async fn handle_blog_index(_req: Request<Body>) -> Result<Response<Body>, Infallible> {
+    if let Some(cm) = check_method(_req, &Method::GET) {
+        return Ok(cm);
+    }
+
+    let mut doc: Markup = generate("Index".into(), html! {
+    });
+
+    Ok(Response::builder()
+        .body(doc.into_string().into())
+        .unwrap())
+}
+
 async fn blog_service(_req: Request<Body>) -> Result<Response<Body>, Infallible> {
     let mut resp = Response::default();
-    match (_req.method(), _req.uri().path()) {
-        // blog index page
-        (&Method::GET, "/") => {
-            // TODO - update
-            *resp.body_mut() = format!("here's a list of {} blogs", POSTS_BY_TITLE.len()).into();
-            Ok(resp)
-        }
-        (&Method::GET, x) if PAGE_RE.is_match(x) => {
+    match _req.uri().path() {
+        "/" => handle_blog_index(_req).await,
+        x if PAGE_RE.is_match(x) => {
             *resp.body_mut() = "here's a blog".into();
             Ok(resp)
         }
-        (&Method::GET, x) if PAGE_ASSET_RE.is_match(x) => {
+        x if PAGE_ASSET_RE.is_match(x) => {
             *resp.body_mut() = "here's a blog asset".into();
             Ok(resp)
         }
-        _ => {
-            *resp.status_mut() = StatusCode::NOT_FOUND;
-            Ok(resp)
-        }
+        _ => Ok(Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::empty())
+            .unwrap()),
     }
 }
 
