@@ -322,7 +322,7 @@ async fn list_posts(state: State<Arc<SharedState>>) -> (HeaderMap<HeaderValue>, 
     (headers, state.pre_rendered_index.clone())
 }
 
-async fn view_post(Path(post_key): Path<String>, state: State<Arc<SharedState>>) -> Response {
+async fn view_post(Path(post_key): Path<String>, headers: HeaderMap, state: State<Arc<SharedState>>) -> Response {
     state.post_index.get(post_key.as_str())
         .map(|i| state.posts.get(*i).unwrap())
         .map(|p| {
@@ -330,14 +330,28 @@ async fn view_post(Path(post_key): Path<String>, state: State<Arc<SharedState>>)
             headers.insert(http::header::CONTENT_TYPE, HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap());
             (StatusCode::OK, headers, p.pre_rendered.clone()).into_response()
         })
-        .unwrap_or_else(|| {
-            let mut headers = HeaderMap::new();
-            headers.insert(http::header::CONTENT_TYPE, HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap());
-            (StatusCode::NOT_FOUND, headers, state.pre_rendered_not_found.clone()).into_response()
-        })
+        .unwrap_or_else(|| { gen_not_found(state, headers) })
 }
 
-async fn view_asset(Path(key): Path<(String, String)>, state: State<Arc<SharedState>>) -> Response {
+fn gen_not_found(state: State<Arc<SharedState>>, headers: HeaderMap) -> Response {
+    let provide_html = headers.get("accept")
+        .map(|v| v.to_str().unwrap().contains("text/html"))
+        .unwrap_or(false);
+
+    if provide_html {
+        let mut headers = HeaderMap::new();
+        headers.insert(http::header::CONTENT_TYPE, HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap());
+        (StatusCode::NOT_FOUND, headers, state.pre_rendered_not_found.clone()).into_response()
+    } else {
+        StatusCode::NOT_FOUND.into_response()
+    }
+}
+
+async fn not_found(state: State<Arc<SharedState>>, headers: HeaderMap) -> Response {
+    gen_not_found(state, headers)
+}
+
+async fn view_asset(Path(key): Path<(String, String)>, state: State<Arc<SharedState>>, headers: HeaderMap) -> Response {
     state.post_index.get(key.0.as_str())
         .map(|i| state.posts.get(*i).unwrap())
         .filter(|p| p.assets.contains_key(key.1.as_str()))
@@ -349,22 +363,16 @@ async fn view_asset(Path(key): Path<(String, String)>, state: State<Arc<SharedSt
             }
             resp
         })
-        .unwrap_or_else(|| {
-            StatusCode::NOT_FOUND.into_response()
-        })
+        .unwrap_or_else(|| { gen_not_found(state, headers) })
 }
 
-#[tokio::main]
-async fn main() {
-    let args = Cli::parse();
-    tracing_subscriber::fmt::init();
-
+fn setup_router() -> Router {
     let state = Arc::new(build_shared_state(collect_posts()));
-
-    let app = Router::new()
+    Router::new()
         .route("/", get(list_posts))
         .route("/:post_key/:asset_key", get(view_asset))
         .route("/:post_key/", get(view_post))
+        .fallback(not_found)
         .with_state(state)
         .layer(
             TraceLayer::new_for_http()
@@ -374,15 +382,110 @@ async fn main() {
                 .on_response(
                     tower_http::trace::DefaultOnResponse::new().level(tracing::Level::INFO),
                 ),
-        );
+        )
+}
+
+#[tokio::main]
+async fn main() {
+    let args = Cli::parse();
+    tracing_subscriber::fmt::init();
     let addr = SocketAddr::from((
         args.bind_address.unwrap_or([127, 0, 0, 1].into()),
         args.bind_port.unwrap_or(8080),
     ));
 
-    let svr = axum::Server::bind(&addr).serve(app.into_make_service());
+    let app = setup_router().into_make_service();
+    let svr = axum::Server::bind(&addr).serve(app);
+
     tracing::info!("server is listening on {}...", svr.local_addr());
     if let Err(err) = svr.await {
         tracing::error!("server error: {}", err);
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::body::Body;
+    use axum::http::{HeaderValue, Method, Request, StatusCode};
+    use axum::http::header::{ACCEPT, CONTENT_LENGTH, CONTENT_TYPE};
+    use crate::{Asset, CONTENT_FILE_NAME, setup_router};
+    use tower::ServiceExt; // for `oneshot` and `ready`
+    use test_case::test_case;
+
+    #[tokio::test]
+    async fn test_index() {
+        let app = setup_router();
+        let resp = app.oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.headers().get(CONTENT_TYPE).unwrap(), "text/html; charset=utf-8");
+        let length: u32 = resp.headers().get(CONTENT_LENGTH).unwrap().to_str().unwrap().parse().unwrap();
+        assert!(length > 1);
+    }
+
+    #[test_case("/a" ; "plain/a")]
+    #[test_case("/a/" ; "plain/a/")]
+    #[test_case("/a/b" ; "plain/a/b")]
+    #[test_case("/a/b/" ; "plain/a/b/")]
+    #[test_case("/a/b/c" ; "plain/a/b/c")]
+    #[tokio::test]
+    async fn test_plain_404(uri: &str) {
+        let app = setup_router();
+        let resp = app.oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        assert_eq!(resp.headers().get(CONTENT_LENGTH).unwrap(), "0");
+        assert!(resp.headers().get(CONTENT_TYPE).is_none());
+    }
+
+    #[test_case("/a" ; "html/a")]
+    #[test_case("/a/" ; "html/a/")]
+    #[test_case("/a/b" ; "html/a/b")]
+    #[test_case("/a/b/" ; "html/a/b/")]
+    #[test_case("/a/b/c" ; "html/a/b/c")]
+    #[tokio::test]
+    async fn test_html_404(uri: &str) {
+        let app = setup_router();
+        let mut req = Request::builder().uri(uri);
+        req.headers_mut().unwrap().insert(ACCEPT, HeaderValue::from_str("text/html").unwrap());
+        let resp = app.oneshot(req.body(Body::empty()).unwrap()).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        assert_eq!(resp.headers().get(CONTENT_TYPE).unwrap(), "text/html; charset=utf-8");
+        let length: u32 = resp.headers().get(CONTENT_LENGTH).unwrap().to_str().unwrap().parse().unwrap();
+        assert!(length > 1);
+    }
+
+    #[test_case("/a", 404 ; "post/a")]
+    #[test_case("/a/", 405 ; "post/a/")]
+    #[test_case("/a/b", 405 ; "post/a/b")]
+    #[test_case("/a/b/", 404 ; "post/a/b/")]
+    #[test_case("/a/b/c", 404 ; "post/a/b/c")]
+    #[tokio::test]
+    async fn test_post(uri: &str, code: u16) {
+        let app = setup_router();
+        let resp = app.oneshot(Request::builder().method(Method::POST).uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status().as_u16(), code);
+    }
+
+    #[tokio::test]
+    async fn test_posts() {
+
+        let blogs: Vec<String> = Asset::iter()
+            .filter(|p| p.contains(CONTENT_FILE_NAME))
+            .map(|p| p.rsplitn(3, "/").skip(1).take(1).last().unwrap().to_owned().to_string())
+            .collect();
+
+        for x in blogs {
+            println!("checking {}", x);
+            let app = setup_router();
+            let resp = app.oneshot(Request::builder().uri(format!("/{}/", x)).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+        }
+    }
+
 }

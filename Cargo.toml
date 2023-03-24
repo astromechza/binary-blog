@@ -14,9 +14,13 @@ convert_case = "0.6.0"
 maud = { version = "0.24", features = ["axum"] }
 axum = { version = "0.6.11", features = ["http2"] }
 tokio = { version = "1", features = ["full"] }
+tower = { version = "0.4.13", features = [] }
 tower-http = { version = "0.4.0", features = ["trace"] }
 tracing = "0.1.37"
 tracing-subscriber = "0.3.16"
 rust-embed = "6.6.0"
 regex = "1"
 mime_guess = "2.0.4"
+
+[dev-dependencies]
+test-case = "3.0.0"
