@@ -1,16 +1,20 @@
 use std::borrow::Cow;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::fmt::Debug;
+use std::hash::Hasher;
 use std::net::{IpAddr, SocketAddr};
 use std::ops::Add;
 use std::str::from_utf8;
 use std::sync::Arc;
 
 use axum::{http, Router, routing::get};
+use axum::body::Body;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use chrono::NaiveDate;
-use clap::Parser;
+use clap::{crate_version, Parser};
 use lazy_static::lazy_static;
 use maud::{DOCTYPE, html, Markup, PreEscaped};
 use rust_embed::RustEmbed;
@@ -54,6 +58,7 @@ struct SharedState {
 
 const CONTENT_FILE_NAME: &str = "content.md";
 const HTML_CONTENT_TYPE: &str = "text/html; charset=utf-8";
+const CRATE_VERSION: &str = crate_version!();
 
 fn collect_posts() -> Vec<Post> {
     let mut options = pulldown_cmark::Options::empty();
@@ -166,7 +171,6 @@ fn pre_render_footer() -> PreEscaped<String> {
     let now = chrono::Utc::now();
     let pid = std::process::id();
     let name = clap::crate_name!();
-    let ver = clap::crate_version!();
     html! {
         footer.row {
             section.column {
@@ -180,7 +184,7 @@ fn pre_render_footer() -> PreEscaped<String> {
                     }
                     br;
                     small {
-                        "name=" (name) " version=" (ver)
+                        "name=" (name) " version=" (CRATE_VERSION)
                         " pid=" (pid) " start-time=" (now.format("%Y-%m-%dT%H:%M:%SZ").to_string())
                     }
                 }
@@ -326,25 +330,52 @@ fn pre_render_not_found() -> Cow<'static, str> {
     tree.into_string().into()
 }
 
-async fn list_posts(state: State<Arc<SharedState>>) -> (HeaderMap<HeaderValue>, Cow<'static, str>) {
-    let mut headers = HeaderMap::new();
-    headers.insert(http::header::CONTENT_TYPE, HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap());
-    (headers, state.pre_rendered_index.clone())
+fn make_hash(x: &str, y: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    hasher.write(CRATE_VERSION.as_bytes());
+    hasher.write(x.as_bytes());
+    hasher.write(y.as_bytes());
+    hasher.finish()
 }
 
-async fn view_post(Path(post_key): Path<String>, headers: HeaderMap, state: State<Arc<SharedState>>) -> Response {
+async fn list_posts(state: State<Arc<SharedState>>, req_headers: HeaderMap) -> Response {
+    let mut headers = HeaderMap::new();
+    headers.insert(http::header::CONTENT_TYPE, HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap());
+    let etag = format!("{:016x}", make_hash("", ""));
+    headers.insert(http::header::ETAG, HeaderValue::from_str(etag.as_str()).unwrap());
+    headers.insert(http::header::CACHE_CONTROL, HeaderValue::from_str("max-age=3600").unwrap());
+
+    if req_headers.get(http::header::IF_NONE_MATCH)
+        .map(|v| v.to_str().unwrap().eq(etag.as_str()))
+        .unwrap_or(false) {
+        return (StatusCode::NOT_MODIFIED, headers).into_response();
+    }
+
+    (headers, state.pre_rendered_index.clone()).into_response()
+}
+
+async fn view_post(Path(post_key): Path<String>, req_headers: HeaderMap, state: State<Arc<SharedState>>) -> Response {
     state.post_index.get(post_key.as_str())
         .map(|i| state.posts.get(*i).unwrap())
         .map(|p| {
             let mut headers = HeaderMap::new();
             headers.insert(http::header::CONTENT_TYPE, HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap());
+            let etag = format!("{:016x}", make_hash(post_key.as_str(), ""));
+            headers.insert(http::header::ETAG, HeaderValue::from_str(etag.as_str()).unwrap());
+            headers.insert(http::header::CACHE_CONTROL, HeaderValue::from_str("max-age=3600").unwrap());
+
+            if req_headers.get(http::header::IF_NONE_MATCH)
+                .map(|v| v.to_str().unwrap().eq(etag.as_str()))
+                .unwrap_or(false) {
+                return (StatusCode::NOT_MODIFIED, headers).into_response();
+            }
             (StatusCode::OK, headers, p.pre_rendered.clone()).into_response()
         })
-        .unwrap_or_else(|| { gen_not_found(state, headers) })
+        .unwrap_or_else(|| { gen_not_found(state, req_headers) })
 }
 
-fn gen_not_found(state: State<Arc<SharedState>>, headers: HeaderMap) -> Response {
-    let provide_html = headers.get("accept")
+fn gen_not_found(state: State<Arc<SharedState>>, req_headers: HeaderMap) -> Response {
+    let provide_html = req_headers.get("accept")
         .map(|v| v.to_str().unwrap().contains("text/html"))
         .unwrap_or(false);
 
@@ -361,19 +392,29 @@ async fn not_found(state: State<Arc<SharedState>>, headers: HeaderMap) -> Respon
     gen_not_found(state, headers)
 }
 
-async fn view_asset(Path(key): Path<(String, String)>, state: State<Arc<SharedState>>, headers: HeaderMap) -> Response {
+async fn view_asset(Path(key): Path<(String, String)>, state: State<Arc<SharedState>>, req_headers: HeaderMap) -> Response {
     state.post_index.get(key.0.as_str())
         .map(|i| state.posts.get(*i).unwrap())
         .filter(|p| p.assets.contains_key(key.1.as_str()))
         .map(|p| p.assets.get(key.1.as_str()).unwrap())
         .map(|a| {
-            let mut resp = a.to_owned().into_response();
-            if let Some(val) = mime_guess::from_path(key.1.as_str()).first_raw() {
-                resp.headers_mut().insert(http::header::CONTENT_TYPE, HeaderValue::from_str(val).unwrap());
+            let mut headers = HeaderMap::new();
+            let etag = format!("{:016x}", make_hash(key.0.as_str(), key.1.as_str()));
+            headers.insert(http::header::ETAG, HeaderValue::from_str(etag.as_str()).unwrap());
+            headers.insert(http::header::CACHE_CONTROL, HeaderValue::from_str("max-age=3600").unwrap());
+
+            if req_headers.get(http::header::IF_NONE_MATCH)
+                .map(|v| v.to_str().unwrap().eq(etag.as_str()))
+                .unwrap_or(false) {
+                return (StatusCode::NOT_MODIFIED, headers).into_response();
             }
-            resp
+
+            if let Some(val) = mime_guess::from_path(key.1.as_str()).first_raw() {
+                headers.insert(http::header::CONTENT_TYPE, HeaderValue::from_str(val).unwrap());
+            }
+            (StatusCode::OK, headers, a.clone()).into_response()
         })
-        .unwrap_or_else(|| { gen_not_found(state, headers) })
+        .unwrap_or_else(|| { gen_not_found(state, req_headers) })
 }
 
 fn setup_router() -> Router {
