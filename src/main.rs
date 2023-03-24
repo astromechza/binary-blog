@@ -1,10 +1,11 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
+use std::ops::Add;
 use std::str::from_utf8;
 use std::sync::Arc;
 
-use axum::{Router, routing::get};
+use axum::{http, Router, routing::get};
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -41,6 +42,7 @@ struct Post {
     date: DateTime<FixedOffset>,
     description: Option<String>,
     pre_rendered: Cow<'static, str>,
+    assets: HashMap<String, Cow<'static, [u8]>>
 }
 
 struct SharedState {
@@ -49,6 +51,9 @@ struct SharedState {
     pre_rendered_index: Cow<'static, str>,
     pre_rendered_not_found: Cow<'static, str>,
 }
+
+const CONTENT_FILE_NAME: &str = "content.md";
+const HTML_CONTENT_TYPE: &str = "text/html; charset=utf-8";
 
 fn collect_posts() -> Vec<Post> {
     let mut options = pulldown_cmark::Options::empty();
@@ -59,11 +64,11 @@ fn collect_posts() -> Vec<Post> {
     let description_r = regex::Regex::new(r#"<meta x-description="(.+)"/?>"#).unwrap();
 
     Asset::iter()
-        .filter(|x| x.ends_with("content.md"))
+        .filter(|x| x.ends_with(CONTENT_FILE_NAME))
         .map(|x| {
             let path = x
                 .split("/")
-                .take_while(|y| !(*y == "content.md"))
+                .take_while(|y| !(*y == CONTENT_FILE_NAME))
                 .last()
                 .unwrap()
                 .to_string();
@@ -92,12 +97,30 @@ fn collect_posts() -> Vec<Post> {
             let tree: Markup = PreEscaped { 0: html_output };
 
             let content = pre_render_post(&parsed_title, &parsed_date, &parsed_description, &tree);
+
+            let mut assets = HashMap::new();
+
+            let prefix = x.rsplitn(2, "/")
+                .skip(1)
+                .last()
+                .unwrap()
+                .to_string()
+                .add("/");
+
+            Asset::iter()
+                .filter(|a| a.contains(&prefix))
+                .filter(|a| !a.contains(CONTENT_FILE_NAME))
+                .for_each(|a| {
+                    assets.insert(a.strip_prefix(&prefix).unwrap().to_string(), Asset::get(a.as_ref()).unwrap().data);
+                });
+
             Post {
                 path,
                 title: parsed_title,
                 date: parsed_date,
                 description: parsed_description,
                 pre_rendered: content,
+                assets,
             }
         })
         .collect()
@@ -295,8 +318,8 @@ fn pre_render_not_found() -> Cow<'static, str> {
 
 async fn list_posts(state: State<Arc<SharedState>>) -> (HeaderMap<HeaderValue>, Cow<'static, str>) {
     let mut headers = HeaderMap::new();
-    headers.insert("content-type", HeaderValue::from_str("text/html; charset=utf-8").unwrap());
-    (headers, state.pre_rendered_index.clone().into())
+    headers.insert(http::header::CONTENT_TYPE, HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap());
+    (headers, state.pre_rendered_index.clone())
 }
 
 async fn view_post(Path(post_key): Path<String>, state: State<Arc<SharedState>>) -> Response {
@@ -304,26 +327,25 @@ async fn view_post(Path(post_key): Path<String>, state: State<Arc<SharedState>>)
         .map(|i| state.posts.get(*i).unwrap())
         .map(|p| {
             let mut headers = HeaderMap::new();
-            headers.insert("content-type", HeaderValue::from_str("text/html; charset=utf-8").unwrap());
+            headers.insert(http::header::CONTENT_TYPE, HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap());
             (StatusCode::OK, headers, p.pre_rendered.clone()).into_response()
         })
         .unwrap_or_else(|| {
             let mut headers = HeaderMap::new();
-            headers.insert("content-type", HeaderValue::from_str("text/html; charset=utf-8").unwrap());
+            headers.insert(http::header::CONTENT_TYPE, HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap());
             (StatusCode::NOT_FOUND, headers, state.pre_rendered_not_found.clone()).into_response()
         })
 }
 
-async fn view_asset(Path(key): Path<(String, String)>) -> Response {
-    let mut path: String = "posts/".to_owned();
-    path.push_str(key.0.as_str());
-    path.push('/');
-    path.push_str(key.1.as_str());
-    Asset::get(path.as_str())
+async fn view_asset(Path(key): Path<(String, String)>, state: State<Arc<SharedState>>) -> Response {
+    state.post_index.get(key.0.as_str())
+        .map(|i| state.posts.get(*i).unwrap())
+        .filter(|p| p.assets.contains_key(key.1.as_str()))
+        .map(|p| p.assets.get(key.1.as_str()).unwrap())
         .map(|a| {
-            let mut resp = a.data.into_response();
-            if let Some(val) = mime_guess::from_path(path).first_raw() {
-                resp.headers_mut().insert("content-type", HeaderValue::from_str(val).unwrap());
+            let mut resp = a.to_owned().into_response();
+            if let Some(val) = mime_guess::from_path(key.1.as_str()).first_raw() {
+                resp.headers_mut().insert(http::header::CONTENT_TYPE, HeaderValue::from_str(val).unwrap());
             }
             resp
         })
