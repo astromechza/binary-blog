@@ -9,7 +9,7 @@ use axum::{http, Router, routing::get};
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use chrono::{DateTime, FixedOffset};
+use chrono::NaiveDate;
 use clap::Parser;
 use lazy_static::lazy_static;
 use maud::{DOCTYPE, html, Markup, PreEscaped};
@@ -39,10 +39,10 @@ struct Cli {
 struct Post {
     path: String,
     title: String,
-    date: DateTime<FixedOffset>,
+    date: NaiveDate,
     description: Option<String>,
     pre_rendered: Cow<'static, str>,
-    assets: HashMap<String, Cow<'static, [u8]>>
+    assets: HashMap<String, Cow<'static, [u8]>>,
 }
 
 struct SharedState {
@@ -60,7 +60,6 @@ fn collect_posts() -> Vec<Post> {
     options.insert(pulldown_cmark::Options::ENABLE_STRIKETHROUGH);
 
     let title_re = regex::Regex::new(r#"<meta x-title="(.+)"/?>"#).unwrap();
-    let date_re = regex::Regex::new(r#"<meta x-date="(.+)"/?>"#).unwrap();
     let description_r = regex::Regex::new(r#"<meta x-description="(.+)"/?>"#).unwrap();
 
     Asset::iter()
@@ -81,11 +80,10 @@ fn collect_posts() -> Vec<Post> {
                 .map(|c| c.get(1).unwrap().as_str().to_owned())
                 .unwrap_or("unknown".to_string());
 
-            let parsed_date = date_re
-                .captures(raw_content)
-                .map(|c| c.get(1).unwrap().as_str())
-                .map(|c| chrono::DateTime::parse_from_rfc3339(c).unwrap())
-                .unwrap_or(chrono::DateTime::default());
+            let parsed_date = path.split("_")
+                .take(1).last()
+                .map(|c| chrono::NaiveDate::parse_from_str(c, "%Y%m%d").unwrap())
+                .unwrap_or(chrono::NaiveDate::default());
 
             let parsed_description = description_r
                 .captures(raw_content)
@@ -145,7 +143,7 @@ fn build_shared_state(posts: Vec<Post>) -> SharedState {
 }
 
 fn pre_render_head(title: &String) -> PreEscaped<String> {
-    html! {
+    let tree = html! {
         head {
             title { (title) }
             link rel="shortcut icon" href="data:image/x-icon;," type="image/x-icon";
@@ -160,21 +158,30 @@ fn pre_render_head(title: &String) -> PreEscaped<String> {
                 (MILLIGRAM_CSS.0)
             }
         }
-    }.clone()
+    };
+    tree.clone()
 }
 
 fn pre_render_footer() -> PreEscaped<String> {
-    let now = chrono::Utc::now().format("%Y").to_string();
+    let now = chrono::Utc::now();
+    let pid = std::process::id();
+    let name = clap::crate_name!();
+    let ver = clap::crate_version!();
     html! {
         footer.row {
             section.column {
                 hr {}
                 p {
-                    "© Ben Meier " (now)
+                    "© Ben Meier " (now.format("%Y").to_string())
                     br;
                     small {
                         "This blog is a single Rust binary with all assets embedded and pre-rendered. "
                         "If you're interested in how it's built, have a look at the code on my Github."
+                    }
+                    br;
+                    small {
+                        "name=" (name) " version=" (ver)
+                        " pid=" (pid) " start-time=" (now.format("%Y-%m-%dT%H:%M:%SZ").to_string())
                     }
                 }
             }
@@ -183,7 +190,7 @@ fn pre_render_footer() -> PreEscaped<String> {
 }
 
 fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, str> {
-    html! {
+    let tree = html! {
         (DOCTYPE)
         html lang="en" {
             (pre_render_head(&"Technical blog of Ben Meier".to_string()))
@@ -243,11 +250,12 @@ fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, str> {
                 }
             }
         }
-    }.into_string().into()
+    };
+    tree.into_string().into()
 }
 
-fn pre_render_post(title: &String, time: &DateTime<FixedOffset>, description: &Option<String>, content: &PreEscaped<String>) -> Cow<'static, str> {
-    html! {
+fn pre_render_post(title: &String, time: &NaiveDate, description: &Option<String>, content: &PreEscaped<String>) -> Cow<'static, str> {
+    let tree = html! {
         (DOCTYPE)
         html lang="en" {
             (pre_render_head(title))
@@ -283,11 +291,12 @@ fn pre_render_post(title: &String, time: &DateTime<FixedOffset>, description: &O
                 }
             }
         }
-    }.into_string().clone().into()
+    };
+    tree.into_string().clone().into()
 }
 
 fn pre_render_not_found() -> Cow<'static, str> {
-    html! {
+    let tree = html! {
         (DOCTYPE)
         html lang="en" {
             (pre_render_head(&"Not found".to_string()))
@@ -313,7 +322,8 @@ fn pre_render_not_found() -> Cow<'static, str> {
                 }
             }
         }
-    }.into_string().into()
+    };
+    tree.into_string().into()
 }
 
 async fn list_posts(state: State<Arc<SharedState>>) -> (HeaderMap<HeaderValue>, Cow<'static, str>) {
@@ -408,9 +418,11 @@ mod tests {
     use axum::body::Body;
     use axum::http::{HeaderValue, Method, Request, StatusCode};
     use axum::http::header::{ACCEPT, CONTENT_LENGTH, CONTENT_TYPE};
-    use crate::{Asset, CONTENT_FILE_NAME, setup_router};
-    use tower::ServiceExt; // for `oneshot` and `ready`
+    // for `oneshot` and `ready`
     use test_case::test_case;
+    use tower::ServiceExt;
+
+    use crate::{Asset, CONTENT_FILE_NAME, setup_router};
 
     #[tokio::test]
     async fn test_index() {
@@ -425,11 +437,11 @@ mod tests {
         assert!(length > 1);
     }
 
-    #[test_case("/a" ; "plain/a")]
-    #[test_case("/a/" ; "plain/a/")]
-    #[test_case("/a/b" ; "plain/a/b")]
-    #[test_case("/a/b/" ; "plain/a/b/")]
-    #[test_case("/a/b/c" ; "plain/a/b/c")]
+    #[test_case("/a"; "plain/a")]
+    #[test_case("/a/"; "plain/a/")]
+    #[test_case("/a/b"; "plain/a/b")]
+    #[test_case("/a/b/"; "plain/a/b/")]
+    #[test_case("/a/b/c"; "plain/a/b/c")]
     #[tokio::test]
     async fn test_plain_404(uri: &str) {
         let app = setup_router();
@@ -439,11 +451,11 @@ mod tests {
         assert!(resp.headers().get(CONTENT_TYPE).is_none());
     }
 
-    #[test_case("/a" ; "html/a")]
-    #[test_case("/a/" ; "html/a/")]
-    #[test_case("/a/b" ; "html/a/b")]
-    #[test_case("/a/b/" ; "html/a/b/")]
-    #[test_case("/a/b/c" ; "html/a/b/c")]
+    #[test_case("/a"; "html/a")]
+    #[test_case("/a/"; "html/a/")]
+    #[test_case("/a/b"; "html/a/b")]
+    #[test_case("/a/b/"; "html/a/b/")]
+    #[test_case("/a/b/c"; "html/a/b/c")]
     #[tokio::test]
     async fn test_html_404(uri: &str) {
         let app = setup_router();
@@ -456,11 +468,11 @@ mod tests {
         assert!(length > 1);
     }
 
-    #[test_case("/a", 404 ; "post/a")]
-    #[test_case("/a/", 405 ; "post/a/")]
-    #[test_case("/a/b", 405 ; "post/a/b")]
-    #[test_case("/a/b/", 404 ; "post/a/b/")]
-    #[test_case("/a/b/c", 404 ; "post/a/b/c")]
+    #[test_case("/a", 404; "post/a")]
+    #[test_case("/a/", 405; "post/a/")]
+    #[test_case("/a/b", 405; "post/a/b")]
+    #[test_case("/a/b/", 404; "post/a/b/")]
+    #[test_case("/a/b/c", 404; "post/a/b/c")]
     #[tokio::test]
     async fn test_post(uri: &str, code: u16) {
         let app = setup_router();
@@ -472,7 +484,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_posts() {
-
         let blogs: Vec<String> = Asset::iter()
             .filter(|p| p.contains(CONTENT_FILE_NAME))
             .map(|p| p.rsplitn(3, "/").skip(1).take(1).last().unwrap().to_owned().to_string())
@@ -487,5 +498,4 @@ mod tests {
             assert_eq!(resp.status(), StatusCode::OK);
         }
     }
-
 }
