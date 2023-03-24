@@ -65,7 +65,8 @@ fn collect_posts() -> Vec<Post> {
                 .split("/")
                 .take_while(|y| !(*y == "content.md"))
                 .last()
-                .unwrap();
+                .unwrap()
+                .to_string();
 
             let raw_bytes = Asset::get(&x).unwrap();
             let raw_content = from_utf8(raw_bytes.data.as_ref()).unwrap();
@@ -90,9 +91,9 @@ fn collect_posts() -> Vec<Post> {
             pulldown_cmark::html::push_html(&mut html_output, parser);
             let tree: Markup = PreEscaped { 0: html_output };
 
-            let content = pre_render_post(parsed_title.clone(), parsed_date.clone(), parsed_description.clone(), &tree);
+            let content = pre_render_post(&parsed_title, &parsed_date, &parsed_description, &tree);
             Post {
-                path: path.to_string(),
+                path,
                 title: parsed_title,
                 date: parsed_date,
                 description: parsed_description,
@@ -102,7 +103,7 @@ fn collect_posts() -> Vec<Post> {
         .collect()
 }
 
-fn build_shared_state<'a>(posts: Vec<Post>) -> SharedState {
+fn build_shared_state(posts: Vec<Post>) -> SharedState {
     let mut post_index = HashMap::new();
     let mut i = 0;
     for x in &posts {
@@ -120,7 +121,7 @@ fn build_shared_state<'a>(posts: Vec<Post>) -> SharedState {
     }
 }
 
-fn pre_render_head(title: String) -> PreEscaped<String> {
+fn pre_render_head(title: &String) -> PreEscaped<String> {
     html! {
         head {
             title { (title) }
@@ -136,7 +137,7 @@ fn pre_render_head(title: String) -> PreEscaped<String> {
                 (MILLIGRAM_CSS.0)
             }
         }
-    }
+    }.clone()
 }
 
 fn pre_render_footer() -> PreEscaped<String> {
@@ -162,7 +163,7 @@ fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, str> {
     html! {
         (DOCTYPE)
         html lang="en" {
-            (pre_render_head("Technical blog of Ben Meier".to_string()))
+            (pre_render_head(&"Technical blog of Ben Meier".to_string()))
             body {
                 div.container style="margin-top: 2em" {
                     header.row {
@@ -222,11 +223,11 @@ fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, str> {
     }.into_string().into()
 }
 
-fn pre_render_post(title: String, time: DateTime<FixedOffset>, description: Option<String>, content: &PreEscaped<String>) -> Cow<'static, str> {
+fn pre_render_post(title: &String, time: &DateTime<FixedOffset>, description: &Option<String>, content: &PreEscaped<String>) -> Cow<'static, str> {
     html! {
         (DOCTYPE)
         html lang="en" {
-            (pre_render_head(title.clone()))
+            (pre_render_head(title))
             body {
                 div.container style="margin-top: 2em" {
                     header.row {
@@ -259,14 +260,14 @@ fn pre_render_post(title: String, time: DateTime<FixedOffset>, description: Opti
                 }
             }
         }
-    }.into_string().into()
+    }.into_string().clone().into()
 }
 
 fn pre_render_not_found() -> Cow<'static, str> {
     html! {
         (DOCTYPE)
         html lang="en" {
-            (pre_render_head("Not found".to_string()))
+            (pre_render_head(&"Not found".to_string()))
             body {
                 div.container style="margin-top: 2em" {
                     header.row {
