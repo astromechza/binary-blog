@@ -12,7 +12,7 @@ use axum::{http, Router, routing::get};
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use clap::{crate_version, Parser};
 use lazy_static::lazy_static;
 use maud::{DOCTYPE, html, Markup, PreEscaped};
@@ -71,6 +71,8 @@ const CACHE_CONTROL: &str = "max-age=300";
 fn collect_posts() -> Vec<Post> {
     let mut options = pulldown_cmark::Options::empty();
     options.insert(pulldown_cmark::Options::ENABLE_STRIKETHROUGH);
+    options.insert(pulldown_cmark::Options::ENABLE_TABLES);
+    options.insert(pulldown_cmark::Options::ENABLE_FOOTNOTES);
 
     let title_re = regex::Regex::new(r#"<meta x-title="(.+)"/?>"#).unwrap();
     let description_r = regex::Regex::new(r#"<meta x-description="(.+)"/?>"#).unwrap();
@@ -94,7 +96,7 @@ fn collect_posts() -> Vec<Post> {
                 .unwrap_or("unknown".to_string());
 
             let parsed_date = path
-                .split("_")
+                .split("-")
                 .take(1)
                 .last()
                 .map(|c| NaiveDate::parse_from_str(c, "%Y%m%d").unwrap())
@@ -140,10 +142,12 @@ fn collect_posts() -> Vec<Post> {
                 assets,
             }
         })
-        .collect()
+        .collect::<Vec<Post>>()
 }
 
-fn build_shared_state(posts: Vec<Post>) -> SharedState {
+fn build_shared_state(mut posts: Vec<Post>) -> SharedState {
+    posts.reverse();
+    tracing::info!("Building shared state from {} posts", posts.len());
     let mut post_index = HashMap::new();
     let mut i = 0;
     for x in &posts {
@@ -166,6 +170,7 @@ fn pre_render_head(title: &String) -> PreEscaped<String> {
         head {
             title { (title) }
             link rel="shortcut icon" href="data:image/x-icon;," type="image/x-icon";
+            link rel="me" href="https://hachyderm.io/@benmeier_";
             meta name="author" content="Ben Meier";
             meta name="author" content="astromechza";
             meta name="description" content="Technical blog of Ben Meier";
@@ -175,6 +180,8 @@ fn pre_render_head(title: &String) -> PreEscaped<String> {
             style {
                 (NORMALIZE_CSS.0)
                 (MILLIGRAM_CSS.0)
+                "pre code { white-space: pre-wrap; } "
+                "ul { list-style: circle outside; margin-left: 1em; } "
             }
         }
     };
@@ -221,6 +228,12 @@ fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, str> {
                             br;
                             "All opinions expressed here are my own. "
                             br;
+                            small {
+                                strong { "Note: " }
+                                "This blog contains a wide range of content accrued over time and from multiple previous attempts at technical blogging over the course of my career. "
+                                "I intentionally don't go back and improve or rewrite old posts, so please take old content with a pinch of salt, and I apologise for any broken links."
+                            }
+                            br;
                             br;
                             ul style="display: inline-flex; margin: 0" {
                                 li style="margin-right: 1em;" {
@@ -245,10 +258,19 @@ fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, str> {
                                 "Posts"
                             }
                             nav {
-                                ul style="margin: 0" {
+                                ul style="margin: 0; list-style: circle outside;" {
+                                    @let mut last_year = 0;
                                     @for x in posts.iter() {
+                                        @if x.date.year() != last_year {
+                                            h4 {
+                                                ({
+                                                    last_year = x.date.year();
+                                                    last_year
+                                                })
+                                            }
+                                        }
                                         li {
-                                            p style="display: inline-grid;" {
+                                            p {
                                                 a href={ (x.path) "/" } {
                                                     time { (x.date.format("%e %B %Y").to_string()) }
                                                     (": ") (x.title)
@@ -676,6 +698,7 @@ mod tests {
             let body_str = String::from_utf8_lossy(body.as_ref());
             let links: Vec<&str> = link_re
                 .find_iter(body_str.as_ref())
+                .filter(|m| !m.as_str().contains("://"))
                 .map(|m| {
                     m.as_str()
                         .split("\"")
