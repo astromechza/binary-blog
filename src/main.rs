@@ -8,15 +8,14 @@ use std::ops::Add;
 use std::str::from_utf8;
 use std::sync::Arc;
 
-use axum::{http, Router, routing::get};
-use axum::body::Body;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
+use axum::{http, routing::get, Router};
 use chrono::NaiveDate;
 use clap::{crate_version, Parser};
 use lazy_static::lazy_static;
-use maud::{DOCTYPE, html, Markup, PreEscaped};
+use maud::{html, Markup, PreEscaped, DOCTYPE};
 use rust_embed::RustEmbed;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber;
@@ -26,8 +25,16 @@ use tracing_subscriber;
 struct Asset;
 
 lazy_static! {
-    static ref NORMALIZE_CSS: PreEscaped<String> = PreEscaped{0: from_utf8(Asset::get("normalize.css").unwrap().data.as_ref()).unwrap().to_owned()};
-    static ref MILLIGRAM_CSS: PreEscaped<String> = PreEscaped{0: from_utf8(Asset::get("milligram.css").unwrap().data.as_ref()).unwrap().to_owned()};
+    static ref NORMALIZE_CSS: PreEscaped<String> = PreEscaped {
+        0: from_utf8(Asset::get("normalize.css").unwrap().data.as_ref())
+            .unwrap()
+            .to_owned()
+    };
+    static ref MILLIGRAM_CSS: PreEscaped<String> = PreEscaped {
+        0: from_utf8(Asset::get("milligram.css").unwrap().data.as_ref())
+            .unwrap()
+            .to_owned()
+    };
 }
 
 #[derive(Parser, Debug)]
@@ -85,8 +92,10 @@ fn collect_posts() -> Vec<Post> {
                 .map(|c| c.get(1).unwrap().as_str().to_owned())
                 .unwrap_or("unknown".to_string());
 
-            let parsed_date = path.split("_")
-                .take(1).last()
+            let parsed_date = path
+                .split("_")
+                .take(1)
+                .last()
                 .map(|c| chrono::NaiveDate::parse_from_str(c, "%Y%m%d").unwrap())
                 .unwrap_or(chrono::NaiveDate::default());
 
@@ -103,7 +112,8 @@ fn collect_posts() -> Vec<Post> {
 
             let mut assets = HashMap::new();
 
-            let prefix = x.rsplitn(2, "/")
+            let prefix = x
+                .rsplitn(2, "/")
                 .skip(1)
                 .last()
                 .unwrap()
@@ -114,7 +124,10 @@ fn collect_posts() -> Vec<Post> {
                 .filter(|a| a.contains(&prefix))
                 .filter(|a| !a.contains(CONTENT_FILE_NAME))
                 .for_each(|a| {
-                    assets.insert(a.strip_prefix(&prefix).unwrap().to_string(), Asset::get(a.as_ref()).unwrap().data);
+                    assets.insert(
+                        a.strip_prefix(&prefix).unwrap().to_string(),
+                        Asset::get(a.as_ref()).unwrap().data,
+                    );
                 });
 
             Post {
@@ -258,7 +271,12 @@ fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, str> {
     tree.into_string().into()
 }
 
-fn pre_render_post(title: &String, time: &NaiveDate, description: &Option<String>, content: &PreEscaped<String>) -> Cow<'static, str> {
+fn pre_render_post(
+    title: &String,
+    time: &NaiveDate,
+    description: &Option<String>,
+    content: &PreEscaped<String>,
+) -> Cow<'static, str> {
     let tree = html! {
         (DOCTYPE)
         html lang="en" {
@@ -338,51 +356,96 @@ fn make_hash(x: &str, y: &str) -> u64 {
     hasher.finish()
 }
 
+fn check_etag_and_return(
+    etag: String,
+    req_headers: &HeaderMap,
+    resp_headers: &HeaderMap,
+) -> Option<Response> {
+    if req_headers
+        .get(http::header::IF_NONE_MATCH)
+        .map(|v| v.to_str().unwrap().eq(etag.as_str()))
+        .unwrap_or(false)
+    {
+        return Some((StatusCode::NOT_MODIFIED, resp_headers.clone()).into_response());
+    }
+    None
+}
+
 async fn list_posts(state: State<Arc<SharedState>>, req_headers: HeaderMap) -> Response {
     let mut headers = HeaderMap::new();
-    headers.insert(http::header::CONTENT_TYPE, HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap());
+    headers.insert(
+        http::header::CONTENT_TYPE,
+        HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap(),
+    );
     let etag = format!("{:016x}", make_hash("", ""));
-    headers.insert(http::header::ETAG, HeaderValue::from_str(etag.as_str()).unwrap());
-    headers.insert(http::header::CACHE_CONTROL, HeaderValue::from_str("max-age=3600").unwrap());
+    headers.insert(
+        http::header::ETAG,
+        HeaderValue::from_str(etag.as_str()).unwrap(),
+    );
+    headers.insert(
+        http::header::CACHE_CONTROL,
+        HeaderValue::from_str("max-age=3600").unwrap(),
+    );
 
-    if req_headers.get(http::header::IF_NONE_MATCH)
-        .map(|v| v.to_str().unwrap().eq(etag.as_str()))
-        .unwrap_or(false) {
-        return (StatusCode::NOT_MODIFIED, headers).into_response();
+    if let Some(not_modified) = check_etag_and_return(etag, &req_headers, &headers) {
+        return not_modified;
     }
 
     (headers, state.pre_rendered_index.clone()).into_response()
 }
 
-async fn view_post(Path(post_key): Path<String>, req_headers: HeaderMap, state: State<Arc<SharedState>>) -> Response {
-    state.post_index.get(post_key.as_str())
+async fn view_post(
+    Path(post_key): Path<String>,
+    req_headers: HeaderMap,
+    state: State<Arc<SharedState>>,
+) -> Response {
+    state
+        .post_index
+        .get(post_key.as_str())
         .map(|i| state.posts.get(*i).unwrap())
         .map(|p| {
             let mut headers = HeaderMap::new();
-            headers.insert(http::header::CONTENT_TYPE, HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap());
+            headers.insert(
+                http::header::CONTENT_TYPE,
+                HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap(),
+            );
             let etag = format!("{:016x}", make_hash(post_key.as_str(), ""));
-            headers.insert(http::header::ETAG, HeaderValue::from_str(etag.as_str()).unwrap());
-            headers.insert(http::header::CACHE_CONTROL, HeaderValue::from_str("max-age=3600").unwrap());
+            headers.insert(
+                http::header::ETAG,
+                HeaderValue::from_str(etag.as_str()).unwrap(),
+            );
+            headers.insert(
+                http::header::CACHE_CONTROL,
+                HeaderValue::from_str("max-age=3600").unwrap(),
+            );
 
-            if req_headers.get(http::header::IF_NONE_MATCH)
-                .map(|v| v.to_str().unwrap().eq(etag.as_str()))
-                .unwrap_or(false) {
-                return (StatusCode::NOT_MODIFIED, headers).into_response();
+            if let Some(not_modified) = check_etag_and_return(etag, &req_headers, &headers) {
+                return not_modified;
             }
+
             (StatusCode::OK, headers, p.pre_rendered.clone()).into_response()
         })
-        .unwrap_or_else(|| { gen_not_found(state, req_headers) })
+        .unwrap_or_else(|| gen_not_found(state, req_headers))
 }
 
 fn gen_not_found(state: State<Arc<SharedState>>, req_headers: HeaderMap) -> Response {
-    let provide_html = req_headers.get("accept")
+    let provide_html = req_headers
+        .get("accept")
         .map(|v| v.to_str().unwrap().contains("text/html"))
         .unwrap_or(false);
 
     if provide_html {
         let mut headers = HeaderMap::new();
-        headers.insert(http::header::CONTENT_TYPE, HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap());
-        (StatusCode::NOT_FOUND, headers, state.pre_rendered_not_found.clone()).into_response()
+        headers.insert(
+            http::header::CONTENT_TYPE,
+            HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap(),
+        );
+        (
+            StatusCode::NOT_FOUND,
+            headers,
+            state.pre_rendered_not_found.clone(),
+        )
+            .into_response()
     } else {
         StatusCode::NOT_FOUND.into_response()
     }
@@ -392,29 +455,42 @@ async fn not_found(state: State<Arc<SharedState>>, headers: HeaderMap) -> Respon
     gen_not_found(state, headers)
 }
 
-async fn view_asset(Path(key): Path<(String, String)>, state: State<Arc<SharedState>>, req_headers: HeaderMap) -> Response {
-    state.post_index.get(key.0.as_str())
+async fn view_asset(
+    Path(key): Path<(String, String)>,
+    state: State<Arc<SharedState>>,
+    req_headers: HeaderMap,
+) -> Response {
+    state
+        .post_index
+        .get(key.0.as_str())
         .map(|i| state.posts.get(*i).unwrap())
         .filter(|p| p.assets.contains_key(key.1.as_str()))
         .map(|p| p.assets.get(key.1.as_str()).unwrap())
         .map(|a| {
             let mut headers = HeaderMap::new();
             let etag = format!("{:016x}", make_hash(key.0.as_str(), key.1.as_str()));
-            headers.insert(http::header::ETAG, HeaderValue::from_str(etag.as_str()).unwrap());
-            headers.insert(http::header::CACHE_CONTROL, HeaderValue::from_str("max-age=3600").unwrap());
+            headers.insert(
+                http::header::ETAG,
+                HeaderValue::from_str(etag.as_str()).unwrap(),
+            );
+            headers.insert(
+                http::header::CACHE_CONTROL,
+                HeaderValue::from_str("max-age=3600").unwrap(),
+            );
 
-            if req_headers.get(http::header::IF_NONE_MATCH)
-                .map(|v| v.to_str().unwrap().eq(etag.as_str()))
-                .unwrap_or(false) {
-                return (StatusCode::NOT_MODIFIED, headers).into_response();
+            if let Some(not_modified) = check_etag_and_return(etag, &req_headers, &headers) {
+                return not_modified;
             }
 
             if let Some(val) = mime_guess::from_path(key.1.as_str()).first_raw() {
-                headers.insert(http::header::CONTENT_TYPE, HeaderValue::from_str(val).unwrap());
+                headers.insert(
+                    http::header::CONTENT_TYPE,
+                    HeaderValue::from_str(val).unwrap(),
+                );
             }
             (StatusCode::OK, headers, a.clone()).into_response()
         })
-        .unwrap_or_else(|| { gen_not_found(state, req_headers) })
+        .unwrap_or_else(|| gen_not_found(state, req_headers))
 }
 
 fn setup_router() -> Router {
@@ -457,25 +533,38 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use axum::body::Body;
+    use axum::http::header::{ACCEPT, CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE, ETAG};
     use axum::http::{HeaderValue, Method, Request, StatusCode};
-    use axum::http::header::{ACCEPT, CONTENT_LENGTH, CONTENT_TYPE};
     // for `oneshot` and `ready`
     use test_case::test_case;
     use tower::ServiceExt;
 
-    use crate::{Asset, CONTENT_FILE_NAME, setup_router};
+    use crate::{setup_router, Asset, CONTENT_FILE_NAME};
 
     #[tokio::test]
     async fn test_index() {
         let app = setup_router();
-        let resp = app.oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        let resp = app
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
             .await
             .unwrap();
 
         assert_eq!(resp.status(), StatusCode::OK);
-        assert_eq!(resp.headers().get(CONTENT_TYPE).unwrap(), "text/html; charset=utf-8");
-        let length: u32 = resp.headers().get(CONTENT_LENGTH).unwrap().to_str().unwrap().parse().unwrap();
+        assert_eq!(
+            resp.headers().get(CONTENT_TYPE).unwrap(),
+            "text/html; charset=utf-8"
+        );
+        let length: u32 = resp
+            .headers()
+            .get(CONTENT_LENGTH)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .parse()
+            .unwrap();
         assert!(length > 1);
+        assert!(resp.headers().get(ETAG).is_some());
+        assert_eq!(resp.headers().get(CACHE_CONTROL).unwrap(), "max-age=3600");
     }
 
     #[test_case("/a"; "plain/a")]
@@ -486,7 +575,10 @@ mod tests {
     #[tokio::test]
     async fn test_plain_404(uri: &str) {
         let app = setup_router();
-        let resp = app.oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap()).await.unwrap();
+        let resp = app
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
         assert_eq!(resp.headers().get(CONTENT_LENGTH).unwrap(), "0");
         assert!(resp.headers().get(CONTENT_TYPE).is_none());
@@ -501,11 +593,23 @@ mod tests {
     async fn test_html_404(uri: &str) {
         let app = setup_router();
         let mut req = Request::builder().uri(uri);
-        req.headers_mut().unwrap().insert(ACCEPT, HeaderValue::from_str("text/html").unwrap());
+        req.headers_mut()
+            .unwrap()
+            .insert(ACCEPT, HeaderValue::from_str("text/html").unwrap());
         let resp = app.oneshot(req.body(Body::empty()).unwrap()).await.unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-        assert_eq!(resp.headers().get(CONTENT_TYPE).unwrap(), "text/html; charset=utf-8");
-        let length: u32 = resp.headers().get(CONTENT_LENGTH).unwrap().to_str().unwrap().parse().unwrap();
+        assert_eq!(
+            resp.headers().get(CONTENT_TYPE).unwrap(),
+            "text/html; charset=utf-8"
+        );
+        let length: u32 = resp
+            .headers()
+            .get(CONTENT_LENGTH)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .parse()
+            .unwrap();
         assert!(length > 1);
     }
 
@@ -517,26 +621,83 @@ mod tests {
     #[tokio::test]
     async fn test_post(uri: &str, code: u16) {
         let app = setup_router();
-        let resp = app.oneshot(Request::builder().method(Method::POST).uri(uri).body(Body::empty()).unwrap())
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri(uri)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status().as_u16(), code);
     }
 
     #[tokio::test]
-    async fn test_posts() {
+    async fn test_image_assets_are_ok() {
         let blogs: Vec<String> = Asset::iter()
             .filter(|p| p.contains(CONTENT_FILE_NAME))
-            .map(|p| p.rsplitn(3, "/").skip(1).take(1).last().unwrap().to_owned().to_string())
+            .map(|p| {
+                p.rsplitn(3, "/")
+                    .skip(1)
+                    .take(1)
+                    .last()
+                    .unwrap()
+                    .to_owned()
+                    .to_string()
+            })
             .collect();
+
+        let link_re = regex::Regex::new(r#"src=".+?""#).unwrap();
 
         for x in blogs {
             println!("checking {}", x);
             let app = setup_router();
-            let resp = app.oneshot(Request::builder().uri(format!("/{}/", x)).body(Body::empty()).unwrap())
+            let resp = app
+                .oneshot(
+                    Request::builder()
+                        .uri(format!("/{}/", x))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
                 .await
                 .unwrap();
             assert_eq!(resp.status(), StatusCode::OK);
+            assert!(resp.headers().get(ETAG).is_some());
+            assert_eq!(resp.headers().get(CACHE_CONTROL).unwrap(), "max-age=3600");
+
+            let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
+            let body_str = String::from_utf8_lossy(body.as_ref());
+            let links: Vec<&str> = link_re
+                .find_iter(body_str.as_ref())
+                .map(|m| {
+                    m.as_str()
+                        .split("\"")
+                        .skip(1)
+                        .take(1)
+                        .last()
+                        .unwrap()
+                        .clone()
+                })
+                .collect();
+
+            for y in links {
+                println!("checking {}", y);
+                let app2 = setup_router();
+                let resp2 = app2
+                    .oneshot(
+                        Request::builder()
+                            .uri(format!("/{}/{}", x, y))
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(resp2.status(), StatusCode::OK);
+                assert!(resp2.headers().get(ETAG).is_some());
+                assert_eq!(resp2.headers().get(CACHE_CONTROL).unwrap(), "max-age=3600");
+            }
         }
     }
 }

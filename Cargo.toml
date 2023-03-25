@@ -11,6 +11,7 @@ clap = { version = "4.1", features = ["derive", "cargo"] }
 pulldown-cmark = "0.9"
 lazy_static = "1.4"
 convert_case = "0.6.0"
+hyper = "0.14.25"
 maud = { version = "0.24", features = ["axum"] }
 axum = { version = "0.6.11", features = ["http2"] }
 tokio = { version = "1", features = ["full"] }
