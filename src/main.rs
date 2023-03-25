@@ -8,14 +8,14 @@ use std::ops::Add;
 use std::str::from_utf8;
 use std::sync::Arc;
 
+use axum::{http, Router, routing::get};
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::{http, routing::get, Router};
 use chrono::NaiveDate;
 use clap::{crate_version, Parser};
 use lazy_static::lazy_static;
-use maud::{html, Markup, PreEscaped, DOCTYPE};
+use maud::{DOCTYPE, html, Markup, PreEscaped};
 use rust_embed::RustEmbed;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber;
@@ -66,6 +66,7 @@ struct SharedState {
 const CONTENT_FILE_NAME: &str = "content.md";
 const HTML_CONTENT_TYPE: &str = "text/html; charset=utf-8";
 const CRATE_VERSION: &str = crate_version!();
+const CACHE_CONTROL: &str = "max-age=300";
 
 fn collect_posts() -> Vec<Post> {
     let mut options = pulldown_cmark::Options::empty();
@@ -96,8 +97,8 @@ fn collect_posts() -> Vec<Post> {
                 .split("_")
                 .take(1)
                 .last()
-                .map(|c| chrono::NaiveDate::parse_from_str(c, "%Y%m%d").unwrap())
-                .unwrap_or(chrono::NaiveDate::default());
+                .map(|c| NaiveDate::parse_from_str(c, "%Y%m%d").unwrap())
+                .unwrap_or(NaiveDate::default());
 
             let parsed_description = description_r
                 .captures(raw_content)
@@ -384,7 +385,7 @@ async fn list_posts(state: State<Arc<SharedState>>, req_headers: HeaderMap) -> R
     );
     headers.insert(
         http::header::CACHE_CONTROL,
-        HeaderValue::from_str("max-age=3600").unwrap(),
+        HeaderValue::from_str(CACHE_CONTROL).unwrap(),
     );
 
     if let Some(not_modified) = check_etag_and_return(etag, &req_headers, &headers) {
@@ -416,7 +417,7 @@ async fn view_post(
             );
             headers.insert(
                 http::header::CACHE_CONTROL,
-                HeaderValue::from_str("max-age=3600").unwrap(),
+                HeaderValue::from_str(CACHE_CONTROL).unwrap(),
             );
 
             if let Some(not_modified) = check_etag_and_return(etag, &req_headers, &headers) {
@@ -439,6 +440,10 @@ fn gen_not_found(state: State<Arc<SharedState>>, req_headers: HeaderMap) -> Resp
         headers.insert(
             http::header::CONTENT_TYPE,
             HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap(),
+        );
+        headers.insert(
+            http::header::CACHE_CONTROL,
+            HeaderValue::from_str(CACHE_CONTROL).unwrap(),
         );
         (
             StatusCode::NOT_FOUND,
@@ -475,7 +480,7 @@ async fn view_asset(
             );
             headers.insert(
                 http::header::CACHE_CONTROL,
-                HeaderValue::from_str("max-age=3600").unwrap(),
+                HeaderValue::from_str(CACHE_CONTROL).unwrap(),
             );
 
             if let Some(not_modified) = check_etag_and_return(etag, &req_headers, &headers) {
@@ -533,13 +538,13 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use axum::body::Body;
-    use axum::http::header::{ACCEPT, CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE, ETAG};
     use axum::http::{HeaderValue, Method, Request, StatusCode};
+    use axum::http::header::{ACCEPT, CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE, ETAG};
     // for `oneshot` and `ready`
     use test_case::test_case;
     use tower::ServiceExt;
 
-    use crate::{setup_router, Asset, CONTENT_FILE_NAME};
+    use crate::{Asset, CONTENT_FILE_NAME, setup_router};
 
     #[tokio::test]
     async fn test_index() {
@@ -564,7 +569,7 @@ mod tests {
             .unwrap();
         assert!(length > 1);
         assert!(resp.headers().get(ETAG).is_some());
-        assert_eq!(resp.headers().get(CACHE_CONTROL).unwrap(), "max-age=3600");
+        assert_eq!(resp.headers().get(CACHE_CONTROL).unwrap(), "max-age=300");
     }
 
     #[test_case("/a"; "plain/a")]
@@ -665,7 +670,7 @@ mod tests {
                 .unwrap();
             assert_eq!(resp.status(), StatusCode::OK);
             assert!(resp.headers().get(ETAG).is_some());
-            assert_eq!(resp.headers().get(CACHE_CONTROL).unwrap(), "max-age=3600");
+            assert_eq!(resp.headers().get(CACHE_CONTROL).unwrap(), "max-age=300");
 
             let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
             let body_str = String::from_utf8_lossy(body.as_ref());
@@ -696,7 +701,7 @@ mod tests {
                     .unwrap();
                 assert_eq!(resp2.status(), StatusCode::OK);
                 assert!(resp2.headers().get(ETAG).is_some());
-                assert_eq!(resp2.headers().get(CACHE_CONTROL).unwrap(), "max-age=3600");
+                assert_eq!(resp2.headers().get(CACHE_CONTROL).unwrap(), "max-age=300");
             }
         }
     }
