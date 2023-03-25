@@ -311,7 +311,7 @@ fn pre_render_post(
                         section.column {
                             h1 { (title) }
                             p {
-                                (time.format("%e %B %Y").to_string())
+                                time datetime=(time.format("%Y-%m-%d").to_string()) { (time.format("%e %B %Y").to_string()) }
                                 @match description {
                                     Some(d) => {
                                         br;
