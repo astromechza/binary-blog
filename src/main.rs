@@ -181,7 +181,8 @@ fn pre_render_head(title: &String) -> PreEscaped<String> {
                 (NORMALIZE_CSS.0)
                 (MILLIGRAM_CSS.0)
                 "pre code { white-space: pre-wrap; } "
-                "ul { list-style: circle outside; margin-left: 1em; } "
+                "ul { list-style: circle outside; } "
+                "ul li { margin-left: 1em; } "
             }
         }
     };
