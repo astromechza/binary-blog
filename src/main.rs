@@ -545,7 +545,7 @@ async fn main() {
     let args = Cli::parse();
     tracing_subscriber::fmt::init();
     let addr = SocketAddr::from((
-        args.bind_address.unwrap_or([127, 0, 0, 1].into()),
+        args.bind_address.unwrap_or([0, 0, 0, 0, 0, 0, 0, 0].into()),
         args.bind_port.unwrap_or(8080),
     ));
 

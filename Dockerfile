@@ -1,0 +1,7 @@
+FROM rust
+COPY ./ /build
+RUN cd /build && cargo build -r
+
+FROM debian:bullseye-slim
+COPY --from=0 /build/target/release/binary-blog /binary-blog
+ENTRYPOINT ["/binary-blog"]
