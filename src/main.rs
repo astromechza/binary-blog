@@ -14,7 +14,6 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use chrono::{Datelike, NaiveDate};
 use clap::{crate_version, Parser};
-use lazy_static::lazy_static;
 use maud::{DOCTYPE, html, Markup, PreEscaped};
 use rust_embed::RustEmbed;
 use tower_http::trace::TraceLayer;
@@ -23,19 +22,6 @@ use tracing_subscriber;
 #[derive(RustEmbed)]
 #[folder = "resources/"]
 struct Asset;
-
-lazy_static! {
-    static ref NORMALIZE_CSS: PreEscaped<String> = PreEscaped {
-        0: from_utf8(Asset::get("normalize.css").unwrap().data.as_ref())
-            .unwrap()
-            .to_owned()
-    };
-    static ref MILLIGRAM_CSS: PreEscaped<String> = PreEscaped {
-        0: from_utf8(Asset::get("milligram.css").unwrap().data.as_ref())
-            .unwrap()
-            .to_owned()
-    };
-}
 
 #[derive(Parser, Debug)]
 #[command(version)]
@@ -47,24 +33,31 @@ struct Cli {
     bind_port: Option<u16>,
 }
 
+#[derive(Clone, Debug)]
+struct Item {
+    content: Cow<'static, [u8]>,
+    content_type: HeaderValue,
+    etag: String,
+    children: HashMap<String, Cow<'static, Item>>,
+}
+
 struct Post {
     path: String,
     title: String,
     date: NaiveDate,
     description: Option<String>,
-    pre_rendered: Cow<'static, str>,
+    pre_rendered: Cow<'static, [u8]>,
     assets: HashMap<String, Cow<'static, [u8]>>,
 }
 
 struct SharedState {
-    posts: Vec<Post>,
-    post_index: HashMap<String, usize>,
-    pre_rendered_index: Cow<'static, str>,
-    pre_rendered_not_found: Cow<'static, str>,
+    root: Cow<'static, Item>,
+    not_found: Cow<'static, Item>,
 }
 
 const CONTENT_FILE_NAME: &str = "content.md";
 const HTML_CONTENT_TYPE: &str = "text/html; charset=utf-8";
+const CSS_CONTENT_TYPE: &str = "text/css; charset=utf-8";
 const CRATE_VERSION: &str = crate_version!();
 const CACHE_CONTROL: &str = "max-age=300";
 
@@ -148,21 +141,53 @@ fn collect_posts() -> Vec<Post> {
 fn build_shared_state(mut posts: Vec<Post>) -> SharedState {
     posts.reverse();
     tracing::info!("Building shared state from {} posts", posts.len());
-    let mut post_index = HashMap::new();
-    let mut i = 0;
+
+    let mut root: Cow<'static, Item> = Cow::Owned(Item {
+        content: pre_render_index(&posts),
+        content_type: HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap(),
+        etag: make_hash("", "").to_string(),
+        children: HashMap::new(),
+    });
+
+    let css1 = Asset::get("normalize.css").unwrap().data.to_owned();
+    let css2 = Asset::get("milligram.css").unwrap().data.to_owned();
+    let style_item = Cow::Owned(Item {
+        content: Cow::Owned([css1, css2].concat().to_owned()),
+        content_type: HeaderValue::from_str(CSS_CONTENT_TYPE).unwrap(),
+        etag: make_hash("style.css", "").to_string(),
+        children: HashMap::new(),
+    });
+    root.to_mut().children.insert("style.css".to_string(), style_item);
+
     for x in &posts {
-        post_index.insert(x.path.clone(), i);
-        i = i + 1;
+        let mut post_item: Cow<'static, Item> = Cow::Owned(Item {
+            content: x.pre_rendered.clone(),
+            content_type: HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap(),
+            etag: make_hash(x.title.as_str(), "").to_string(),
+            children: HashMap::new(),
+        });
+
+        for y in x.assets.clone() {
+            let asset_item = Cow::Owned(Item {
+                content: y.1.clone(),
+                content_type: HeaderValue::from_str(mime_guess::from_path(y.0.as_str()).first_or_text_plain().to_string().as_str()).unwrap(),
+                etag: make_hash(x.title.as_str(), y.0.as_str()).to_string(),
+                children: HashMap::new(),
+            });
+            post_item.to_mut().children.insert(y.0.clone(), asset_item);
+        }
+
+        root.to_mut().children.insert(x.path.clone(), post_item);
     }
 
-    let index_page = pre_render_index(&posts);
+    let not_found = Cow::Owned(Item {
+        content: pre_render_not_found(),
+        content_type: HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap(),
+        etag: make_hash("", "").to_string(),
+        children: HashMap::new(),
+    });
 
-    SharedState {
-        posts,
-        post_index,
-        pre_rendered_index: index_page,
-        pre_rendered_not_found: pre_render_not_found(),
-    }
+    SharedState { root, not_found }
 }
 
 fn pre_render_head(title: &String) -> PreEscaped<String> {
@@ -176,10 +201,8 @@ fn pre_render_head(title: &String) -> PreEscaped<String> {
             meta name="description" content="Technical blog of Ben Meier";
             meta name="keywords" content="golang, rust, distributed systems, programming, security";
             meta name="viewport" content="width=device-width, initial-scale=1.0";
-
+            link rel="stylesheet" href="/style.css";
             style {
-                (NORMALIZE_CSS.0)
-                (MILLIGRAM_CSS.0)
                 "pre code { white-space: pre-wrap; } "
                 "ul { list-style: circle outside; } "
                 "ul li { margin-left: 1em; } "
@@ -215,7 +238,7 @@ fn pre_render_footer() -> PreEscaped<String> {
     }
 }
 
-fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, str> {
+fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, [u8]> {
     let tree = html! {
         (DOCTYPE)
         html lang="en" {
@@ -292,7 +315,7 @@ fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, str> {
             }
         }
     };
-    tree.into_string().into()
+    Cow::from(tree.into_string().as_bytes().to_owned()).to_owned()
 }
 
 fn pre_render_post(
@@ -300,7 +323,7 @@ fn pre_render_post(
     time: &NaiveDate,
     description: &Option<String>,
     content: &PreEscaped<String>,
-) -> Cow<'static, str> {
+) -> Cow<'static, [u8]> {
     let tree = html! {
         (DOCTYPE)
         html lang="en" {
@@ -338,10 +361,10 @@ fn pre_render_post(
             }
         }
     };
-    tree.into_string().clone().into()
+    Cow::from(tree.into_string().as_bytes().to_owned()).to_owned()
 }
 
-fn pre_render_not_found() -> Cow<'static, str> {
+fn pre_render_not_found() -> Cow<'static, [u8]> {
     let tree = html! {
         (DOCTYPE)
         html lang="en" {
@@ -369,7 +392,7 @@ fn pre_render_not_found() -> Cow<'static, str> {
             }
         }
     };
-    tree.into_string().into()
+    Cow::from(tree.into_string().as_bytes().to_owned()).to_owned()
 }
 
 fn make_hash(x: &str, y: &str) -> u64 {
@@ -395,63 +418,6 @@ fn check_etag_and_return(
     None
 }
 
-async fn list_posts(state: State<Arc<SharedState>>, req_headers: HeaderMap) -> Response {
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        http::header::CONTENT_TYPE,
-        HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap(),
-    );
-    let etag = format!("{:016x}", make_hash("", ""));
-    headers.insert(
-        http::header::ETAG,
-        HeaderValue::from_str(etag.as_str()).unwrap(),
-    );
-    headers.insert(
-        http::header::CACHE_CONTROL,
-        HeaderValue::from_str(CACHE_CONTROL).unwrap(),
-    );
-
-    if let Some(not_modified) = check_etag_and_return(etag, &req_headers, &headers) {
-        return not_modified;
-    }
-
-    (headers, state.pre_rendered_index.clone()).into_response()
-}
-
-async fn view_post(
-    Path(post_key): Path<String>,
-    req_headers: HeaderMap,
-    state: State<Arc<SharedState>>,
-) -> Response {
-    state
-        .post_index
-        .get(post_key.as_str())
-        .map(|i| state.posts.get(*i).unwrap())
-        .map(|p| {
-            let mut headers = HeaderMap::new();
-            headers.insert(
-                http::header::CONTENT_TYPE,
-                HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap(),
-            );
-            let etag = format!("{:016x}", make_hash(post_key.as_str(), ""));
-            headers.insert(
-                http::header::ETAG,
-                HeaderValue::from_str(etag.as_str()).unwrap(),
-            );
-            headers.insert(
-                http::header::CACHE_CONTROL,
-                HeaderValue::from_str(CACHE_CONTROL).unwrap(),
-            );
-
-            if let Some(not_modified) = check_etag_and_return(etag, &req_headers, &headers) {
-                return not_modified;
-            }
-
-            (StatusCode::OK, headers, p.pre_rendered.clone()).into_response()
-        })
-        .unwrap_or_else(|| gen_not_found(state, req_headers))
-}
-
 fn gen_not_found(state: State<Arc<SharedState>>, req_headers: HeaderMap) -> Response {
     let provide_html = req_headers
         .get("accept")
@@ -462,7 +428,7 @@ fn gen_not_found(state: State<Arc<SharedState>>, req_headers: HeaderMap) -> Resp
         let mut headers = HeaderMap::new();
         headers.insert(
             http::header::CONTENT_TYPE,
-            HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap(),
+            state.not_found.content_type.clone(),
         );
         headers.insert(
             http::header::CACHE_CONTROL,
@@ -471,7 +437,7 @@ fn gen_not_found(state: State<Arc<SharedState>>, req_headers: HeaderMap) -> Resp
         (
             StatusCode::NOT_FOUND,
             headers,
-            state.pre_rendered_not_found.clone(),
+            state.not_found.content.clone(),
         )
             .into_response()
     } else {
@@ -483,50 +449,73 @@ async fn not_found(state: State<Arc<SharedState>>, headers: HeaderMap) -> Respon
     gen_not_found(state, headers)
 }
 
-async fn view_asset(
+async fn view_root_item(
+    state: State<Arc<SharedState>>,
+    req_headers: HeaderMap,
+) -> Response {
+    view_nested_item(Path(("".to_string(), "".to_string())), state, req_headers).await
+}
+
+async fn view_item(
+    Path(key): Path<String>,
+    state: State<Arc<SharedState>>,
+    req_headers: HeaderMap,
+) -> Response {
+    view_nested_item(Path((key, "".to_string())), state, req_headers).await
+}
+
+async fn view_nested_item(
     Path(key): Path<(String, String)>,
     state: State<Arc<SharedState>>,
     req_headers: HeaderMap,
 ) -> Response {
-    state
-        .post_index
-        .get(key.0.as_str())
-        .map(|i| state.posts.get(*i).unwrap())
-        .filter(|p| p.assets.contains_key(key.1.as_str()))
-        .map(|p| p.assets.get(key.1.as_str()).unwrap())
-        .map(|a| {
-            let mut headers = HeaderMap::new();
-            let etag = format!("{:016x}", make_hash(key.0.as_str(), key.1.as_str()));
-            headers.insert(
-                http::header::ETAG,
-                HeaderValue::from_str(etag.as_str()).unwrap(),
-            );
-            headers.insert(
-                http::header::CACHE_CONTROL,
-                HeaderValue::from_str(CACHE_CONTROL).unwrap(),
-            );
-
-            if let Some(not_modified) = check_etag_and_return(etag, &req_headers, &headers) {
-                return not_modified;
+    let mut status = StatusCode::OK;
+    let mut x = state.root.clone();
+    if !key.0.is_empty() {
+        if let Some(y) = x.children.get(key.0.as_str()) {
+            x = y.clone();
+            if !key.1.is_empty() {
+                if let Some(z) = x.children.get(key.1.as_str()) {
+                    x = z.clone()
+                } else {
+                    x = state.not_found.clone();
+                    status = StatusCode::NOT_FOUND;
+                }
             }
+        } else {
+            x = state.not_found.clone();
+            status = StatusCode::NOT_FOUND;
+        }
+    }
 
-            if let Some(val) = mime_guess::from_path(key.1.as_str()).first_raw() {
-                headers.insert(
-                    http::header::CONTENT_TYPE,
-                    HeaderValue::from_str(val).unwrap(),
-                );
-            }
-            (StatusCode::OK, headers, a.clone()).into_response()
-        })
-        .unwrap_or_else(|| gen_not_found(state, req_headers))
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        http::header::CONTENT_TYPE,
+        x.content_type.clone(),
+    );
+    headers.insert(
+        http::header::ETAG,
+        HeaderValue::from_str(x.etag.as_str()).unwrap(),
+    );
+    headers.insert(
+        http::header::CACHE_CONTROL,
+        HeaderValue::from_str(CACHE_CONTROL).unwrap(),
+    );
+
+    if let Some(not_modified) = check_etag_and_return(x.etag.clone(), &req_headers, &headers) {
+        return not_modified;
+    }
+
+    (status, headers, x.content.clone()).into_response()
 }
 
 fn setup_router() -> Router {
     let state = Arc::new(build_shared_state(collect_posts()));
     Router::new()
-        .route("/", get(list_posts))
-        .route("/:post_key/:asset_key", get(view_asset))
-        .route("/:post_key/", get(view_post))
+        .route("/", get(view_root_item))
+        .route("/:a", get(view_item))
+        .route("/:a/", get(view_item))
+        .route("/:a/:b", get(view_nested_item))
         .fallback(not_found)
         .with_state(state)
         .layer(
