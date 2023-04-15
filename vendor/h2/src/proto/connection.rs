@@ -80,6 +80,7 @@ pub(crate) struct Config {
     pub max_send_buffer_size: usize,
     pub reset_stream_duration: Duration,
     pub reset_stream_max: usize,
+    pub remote_reset_stream_max: usize,
     pub settings: frame::Settings,
 }
 
@@ -118,6 +119,7 @@ where
                     .unwrap_or(false),
                 local_reset_duration: config.reset_stream_duration,
                 local_reset_max: config.reset_stream_max,
+                remote_reset_max: config.remote_reset_stream_max,
                 remote_init_window_sz: DEFAULT_INITIAL_WINDOW_SIZE,
                 remote_max_initiated: config
                     .settings
@@ -170,6 +172,11 @@ where
     /// by the remote peer.
     pub(crate) fn max_recv_streams(&self) -> usize {
         self.inner.streams.max_recv_streams()
+    }
+
+    #[cfg(feature = "unstable")]
+    pub fn num_wired_streams(&self) -> usize {
+        self.inner.streams.num_wired_streams()
     }
 
     /// Returns `Ready` when the connection is ready to receive a frame.
