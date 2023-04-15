@@ -12,10 +12,12 @@ use axum::{http, Router, routing::get};
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use chrono::{Datelike, NaiveDate};
 use clap::{crate_version, Parser};
 use maud::{DOCTYPE, html, Markup, PreEscaped};
 use rust_embed::RustEmbed;
+use time::{Date, OffsetDateTime, PrimitiveDateTime};
+use time::format_description::FormatItem;
+use time::macros::{format_description, time};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber;
 
@@ -44,7 +46,7 @@ struct Item {
 struct Post {
     path: String,
     title: String,
-    date: NaiveDate,
+    date: PrimitiveDateTime,
     description: Option<String>,
     pre_rendered: Cow<'static, [u8]>,
     assets: HashMap<String, Cow<'static, [u8]>>,
@@ -60,6 +62,10 @@ const HTML_CONTENT_TYPE: &str = "text/html; charset=utf-8";
 const CSS_CONTENT_TYPE: &str = "text/css; charset=utf-8";
 const CRATE_VERSION: &str = crate_version!();
 const CACHE_CONTROL: &str = "max-age=300";
+
+const POST_DATE_FORMAT: &[FormatItem] = format_description!("[day padding:none] [month repr:long] [year]");
+const RFC3339_DATE_FORMAT: &[FormatItem] = format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]Z");
+const FOOTER_DATE_FORMAT: &[FormatItem] = RFC3339_DATE_FORMAT;
 
 fn collect_posts() -> Vec<Post> {
     let mut options = pulldown_cmark::Options::empty();
@@ -88,12 +94,14 @@ fn collect_posts() -> Vec<Post> {
                 .map(|c| c.get(1).unwrap().as_str().to_owned())
                 .unwrap_or("unknown".to_string());
 
+            let format = format_description!("[year][month][day]");
             let parsed_date = path
                 .split("-")
                 .take(1)
                 .last()
-                .map(|c| NaiveDate::parse_from_str(c, "%Y%m%d").unwrap())
-                .unwrap_or(NaiveDate::default());
+                .map(|c| Date::parse(c, &format).unwrap())
+                .unwrap_or(OffsetDateTime::now_utc().date());
+            let parsed_date_time = PrimitiveDateTime::new(parsed_date, time!(0:00));
 
             let parsed_description = description_r
                 .captures(raw_content)
@@ -104,7 +112,7 @@ fn collect_posts() -> Vec<Post> {
             pulldown_cmark::html::push_html(&mut html_output, parser);
             let tree: Markup = PreEscaped { 0: html_output };
 
-            let content = pre_render_post(&parsed_title, &parsed_date, &parsed_description, &tree);
+            let content = pre_render_post(&parsed_title, &parsed_date_time, &parsed_description, &tree);
 
             let mut assets = HashMap::new();
 
@@ -129,7 +137,7 @@ fn collect_posts() -> Vec<Post> {
             Post {
                 path,
                 title: parsed_title,
-                date: parsed_date,
+                date: parsed_date_time,
                 description: parsed_description,
                 pre_rendered: content,
                 assets,
@@ -213,7 +221,7 @@ fn pre_render_head(title: &String) -> PreEscaped<String> {
 }
 
 fn pre_render_footer() -> PreEscaped<String> {
-    let now = chrono::Utc::now();
+    let now = OffsetDateTime::now_utc();
     let pid = std::process::id();
     let name = clap::crate_name!();
     html! {
@@ -221,7 +229,7 @@ fn pre_render_footer() -> PreEscaped<String> {
             section.column {
                 hr {}
                 p {
-                    "© Ben Meier " (now.format("%Y").to_string())
+                    "© Ben Meier " (now.year())
                     br;
                     small {
                         "This blog is a single Rust binary with all assets embedded and pre-rendered. "
@@ -230,7 +238,7 @@ fn pre_render_footer() -> PreEscaped<String> {
                     br;
                     small {
                         "name=" (name) " version=" (CRATE_VERSION)
-                        " pid=" (pid) " start-time=" (now.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+                        " pid=" (pid) " start-time=" (now.format(&FOOTER_DATE_FORMAT).unwrap().to_string())
                     }
                 }
             }
@@ -296,7 +304,7 @@ fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, [u8]> {
                                         li {
                                             p {
                                                 a href={ (x.path) "/" } {
-                                                    time { (x.date.format("%e %B %Y").to_string()) }
+                                                    time datetime=(x.date.format(&RFC3339_DATE_FORMAT).unwrap().to_string()) { (x.date.format(&POST_DATE_FORMAT).unwrap().to_string()) }
                                                     (": ") (x.title)
                                                 }
                                                 @if x.description.is_some() {
@@ -320,7 +328,7 @@ fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, [u8]> {
 
 fn pre_render_post(
     title: &String,
-    time: &NaiveDate,
+    time: &PrimitiveDateTime,
     description: &Option<String>,
     content: &PreEscaped<String>,
 ) -> Cow<'static, [u8]> {
@@ -334,7 +342,7 @@ fn pre_render_post(
                         section.column {
                             h1 { (title) }
                             p {
-                                time datetime=(time.format("%Y-%m-%d").to_string()) { (time.format("%e %B %Y").to_string()) }
+                                time datetime=(time.format(&RFC3339_DATE_FORMAT).unwrap().to_string()) { (time.format(&POST_DATE_FORMAT).unwrap().to_string()) }
                                 @match description {
                                     Some(d) => {
                                         br;

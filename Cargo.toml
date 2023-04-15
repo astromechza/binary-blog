@@ -6,7 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-chrono = "0.4.24"
 clap = { version = "4.1", features = ["derive", "cargo"] }
 pulldown-cmark = "0.9"
 lazy_static = "1.4"
@@ -15,6 +14,7 @@ h2 = "0.3.17"
 hyper = "0.14.26"
 maud = { version = "0.24", features = ["axum"] }
 axum = { version = "0.6.11", features = ["http2"] }
+time = { version = "0.3.20", features = ["macros", "formatting", "parsing"] }
 tokio = { version = "1", features = ["full"] }
 tower = { version = "0.4.13", features = [] }
 tower-http = { version = "0.4.0", features = ["trace"] }
