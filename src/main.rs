@@ -469,7 +469,6 @@ async fn view_nested_item(
     state: State<Arc<SharedState>>,
     req_headers: HeaderMap,
 ) -> Response {
-    let mut status = StatusCode::OK;
     let mut x = state.root.clone();
     if !key.0.is_empty() {
         if let Some(y) = x.children.get(key.0.as_str()) {
@@ -478,13 +477,11 @@ async fn view_nested_item(
                 if let Some(z) = x.children.get(key.1.as_str()) {
                     x = z.clone()
                 } else {
-                    x = state.not_found.clone();
-                    status = StatusCode::NOT_FOUND;
+                    return gen_not_found(state, req_headers);
                 }
             }
         } else {
-            x = state.not_found.clone();
-            status = StatusCode::NOT_FOUND;
+            return gen_not_found(state, req_headers);
         }
     }
 
@@ -506,7 +503,7 @@ async fn view_nested_item(
         return not_modified;
     }
 
-    (status, headers, x.content.clone()).into_response()
+    (StatusCode::OK, headers, x.content.clone()).into_response()
 }
 
 fn setup_router() -> Router {
@@ -630,7 +627,8 @@ mod tests {
         assert!(length > 1);
     }
 
-    #[test_case("/a", 404; "post/a")]
+    #[test_case("/", 405; "post/")]
+    #[test_case("/a", 405; "post/a")]
     #[test_case("/a/", 405; "post/a/")]
     #[test_case("/a/b", 405; "post/a/b")]
     #[test_case("/a/b/", 404; "post/a/b/")]
