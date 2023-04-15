@@ -16,16 +16,14 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    - name: Install latest nightly
+    - name: Install latest stable
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly
+        toolchain: stable
         override: true
         components: rustfmt, clippy
     - name: Check version
       run: cargo --version
-    - name: Check file
-      run: ls -al /home/runner/work/binary-blog/binary-blog/vendor/time/
     - name: Run tests
       run: cargo test --verbose --offline
     - name: Build
