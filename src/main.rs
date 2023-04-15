@@ -204,8 +204,8 @@ fn pre_render_head(title: &String) -> PreEscaped<String> {
             title { (title) }
             link rel="shortcut icon" href="data:image/x-icon;," type="image/x-icon";
             link rel="me" href="https://hachyderm.io/@benmeier_";
+            meta charset="utf-8";
             meta name="author" content="Ben Meier";
-            meta name="author" content="astromechza";
             meta name="description" content="Technical blog of Ben Meier";
             meta name="keywords" content="golang, rust, distributed systems, programming, security";
             meta name="viewport" content="width=device-width, initial-scale=1.0";
@@ -214,6 +214,7 @@ fn pre_render_head(title: &String) -> PreEscaped<String> {
                 "pre code { white-space: pre-wrap; } "
                 "ul { list-style: circle outside; } "
                 "ul li { margin-left: 1em; } "
+                ".index-nav-ul { margin: 0; list-style: circle outside; } "
             }
         }
     };
@@ -233,7 +234,11 @@ fn pre_render_footer() -> PreEscaped<String> {
                     br;
                     small {
                         "This blog is a single Rust binary with all assets embedded and pre-rendered. "
-                        "If you're interested in how it's built, have a look at the code on my Github."
+                        "If you're interested in how it's built, have a look at the code on "
+                        a href="https://github.com/astromechza/binary-blog" {
+                            "Github"
+                        }
+                        "."
                     }
                     br;
                     small {
@@ -252,69 +257,63 @@ fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, [u8]> {
         html lang="en" {
             (pre_render_head(&"Technical blog of Ben Meier".to_string()))
             body {
-                div.container style="margin-top: 2em" {
+                div.container {
                     header.row {
                         section.column {
                             h1 { "Technical blog of Ben Meier" }
-                            "I'm a software engineer working mostly on distributed systems with an interest in security, networking, correctness, and chaos. "
-                            br;
-                            "All opinions expressed here are my own. "
-                            br;
                             small {
-                                strong { "Note: " }
-                                "This blog contains a wide range of content accrued over time and from multiple previous attempts at technical blogging over the course of my career. "
-                                "I intentionally don't go back and improve or rewrite old posts, so please take old content with a pinch of salt, and I apologise for any broken links."
+                                p {
+                                    "I'm a software engineer working mostly on distributed systems with an interest in security, networking, correctness, and chaos. "
+                                    "All opinions expressed here are my own. "
+                                }
+                                p {
+                                    strong { "Note: " }
+                                    "This blog contains a wide range of content accrued over time and from multiple previous attempts at technical blogging over the course of my career. "
+                                    "I intentionally don't go back and improve or rewrite old posts, so please take old content with a pinch of salt, and I apologise for any broken links."
+                                }
                             }
                             br;
-                            br;
-                            ul style="display: inline-flex; margin: 0" {
-                                li style="margin-right: 1em;" {
-                                    "Mastodon: "
-                                    a href="https://hachyderm.io/@benmeier_" {
-                                        "@benmeier_@hachyderm.io"
-                                    }
-                                }
-                                li {
-                                    "Github: "
-                                    a href="https://github.com/astromechza" {
-                                        "astromechza"
-                                    }
-                                }
+                            "Mastodon: "
+                            a href="https://hachyderm.io/@benmeier_" {
+                                "@benmeier_@hachyderm.io"
+                            }
+                            " | Github: "
+                            a href="https://github.com/astromechza" {
+                                "astromechza"
                             }
                             hr {}
                         }
                     }
                     main.row {
                         section.column {
-                            h2 {
-                                "Posts"
-                            }
                             nav {
-                                ul style="margin: 0; list-style: circle outside;" {
-                                    @let mut last_year = 0;
-                                    @for x in posts.iter() {
-                                        @if x.date.year() != last_year {
-                                            h4 {
-                                                ({
-                                                    last_year = x.date.year();
-                                                    last_year
-                                                })
-                                            }
+                                (PreEscaped("<ul class=\"index-nav-ul\">"))
+                                @let mut last_year = 0;
+                                @for x in posts.iter() {
+                                    @if x.date.year() != last_year {
+                                        (PreEscaped("</ul>"))
+                                        h4 {
+                                            ({
+                                                last_year = x.date.year();
+                                                last_year
+                                            })
                                         }
-                                        li {
-                                            p {
-                                                a href={ (x.path) "/" } {
-                                                    time datetime=(x.date.format(&RFC3339_DATE_FORMAT).unwrap().to_string()) { (x.date.format(&POST_DATE_FORMAT).unwrap().to_string()) }
-                                                    (": ") (x.title)
-                                                }
-                                                @if x.description.is_some() {
-                                                    br;
-                                                    (x.description.clone().unwrap())
-                                                }
+                                        (PreEscaped("<ul class=\"index-nav-ul\">"))
+                                    }
+                                    li {
+                                        p {
+                                            a href={ (x.path) "/" } {
+                                                time datetime=(x.date.format(&RFC3339_DATE_FORMAT).unwrap().to_string()) { (x.date.format(&POST_DATE_FORMAT).unwrap().to_string()) }
+                                                (": ") (x.title)
+                                            }
+                                            @if x.description.is_some() {
+                                                br;
+                                                (x.description.clone().unwrap())
                                             }
                                         }
                                     }
                                 }
+                                (PreEscaped("</ul>"))
                             }
                         }
                     }
@@ -337,11 +336,12 @@ fn pre_render_post(
         html lang="en" {
             (pre_render_head(title))
             body {
-                div.container style="margin-top: 2em" {
+                div.container {
                     header.row {
                         section.column {
                             h1 { (title) }
                             p {
+                                "Ben Meier - "
                                 time datetime=(time.format(&RFC3339_DATE_FORMAT).unwrap().to_string()) { (time.format(&POST_DATE_FORMAT).unwrap().to_string()) }
                                 @match description {
                                     Some(d) => {
@@ -378,7 +378,7 @@ fn pre_render_not_found() -> Cow<'static, [u8]> {
         html lang="en" {
             (pre_render_head(&"Not found".to_string()))
             body {
-                div.container style="margin-top: 2em" {
+                div.container {
                     header.row {
                         section.column {
                             h1 { ("Post not found") }
