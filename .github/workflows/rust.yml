@@ -24,6 +24,8 @@ jobs:
         components: rustfmt, clippy
     - name: Check version
       run: cargo --version
+    - name: Check file
+      run: ls -al /home/runner/work/binary-blog/binary-blog/vendor/time/
     - name: Run tests
       run: cargo test --verbose --offline
     - name: Build
