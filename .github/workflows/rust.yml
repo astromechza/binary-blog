@@ -16,8 +16,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    - name: Check
-      run: ls -l ./vendor/time/LICENSE-APACHE && pwd && ls -l /home/runner/work/binary-blog/binary-blog/vendor/time/LICENSE-Apache
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+    - name: Check version
+      run: cargo --version
     - name: Run tests
       run: cargo test --verbose --offline
     - name: Build
