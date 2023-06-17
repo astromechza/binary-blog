@@ -28,7 +28,7 @@ jobs:
         minor_pattern: "(MINOR)"
         version_format: "${major}.${minor}.${patch}"
     - name: Set crate version
-      run: sed -i 's/0.0.0/${{ steps.semver.outputs.version }}/' Cargo.toml
+      run: sed -i 's/0.0.0/${{ steps.semver.outputs.version }}/g' Cargo.toml
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
     - name: Login to Docker Hub
