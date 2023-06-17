@@ -68,5 +68,7 @@ jobs:
     - name: Release  tag
       uses: softprops/action-gh-release@v1
       with:
+        tag_name: ${{ steps.semver.outputs.version_tag }}
         files: |
+          binary-blog-${{ steps.semver.outputs.version }}.tgz
           
