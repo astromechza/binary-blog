@@ -514,10 +514,16 @@ async fn view_nested_item(
     (StatusCode::OK, headers, x.content.clone()).into_response()
 }
 
+async fn healthcheck() -> Response {
+    (StatusCode::NO_CONTENT).into_response()
+}
+
 fn setup_router() -> Router {
     let state = Arc::new(build_shared_state(collect_posts()));
     Router::new()
         .route("/", get(view_root_item))
+        .route("/livez", get(healthcheck))
+        .route("/readyz", get(healthcheck))
         .route("/:a", get(view_item))
         .route("/:a/", get(view_item))
         .route("/:a/:b", get(view_nested_item))
@@ -587,6 +593,30 @@ mod tests {
         assert!(length > 1);
         assert!(resp.headers().get(ETAG).is_some());
         assert_eq!(resp.headers().get(CACHE_CONTROL).unwrap(), "max-age=300");
+    }
+
+    #[tokio::test]
+    async fn test_livez() {
+        let app = setup_router();
+        let resp = app
+            .oneshot(Request::builder().uri("/livez").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+        assert_eq!(resp.headers().get(CONTENT_LENGTH).unwrap(), "0");
+        assert!(resp.headers().get(CONTENT_TYPE).is_none());
+    }
+
+    #[tokio::test]
+    async fn test_readyz() {
+        let app = setup_router();
+        let resp = app
+            .oneshot(Request::builder().uri("/readyz").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+        assert_eq!(resp.headers().get(CONTENT_LENGTH).unwrap(), "0");
+        assert!(resp.headers().get(CONTENT_TYPE).is_none());
     }
 
     #[test_case("/a"; "plain/a")]
