@@ -60,6 +60,7 @@ struct SharedState {
 const CONTENT_FILE_NAME: &str = "content.md";
 const HTML_CONTENT_TYPE: &str = "text/html; charset=utf-8";
 const CSS_CONTENT_TYPE: &str = "text/css; charset=utf-8";
+const PLAIN_CONTENT_TYPE: &str = "text/plain; charset=utf-8";
 const CRATE_VERSION: &str = crate_version!();
 const CACHE_CONTROL: &str = "max-age=300";
 
@@ -518,12 +519,19 @@ async fn healthcheck() -> Response {
     (StatusCode::NO_CONTENT).into_response()
 }
 
+async fn robots() -> Response {
+    let mut headers = HeaderMap::new();
+    headers.insert(http::header::CONTENT_TYPE, HeaderValue::from_str(PLAIN_CONTENT_TYPE).unwrap());
+    (StatusCode::OK, headers, "User-agent: *\nAllow: /\nDisallow: /livez\nDisallow: /readyz\n").into_response()
+}
+
 fn setup_router() -> Router {
     let state = Arc::new(build_shared_state(collect_posts()));
     Router::new()
         .route("/", get(view_root_item))
         .route("/livez", get(healthcheck))
         .route("/readyz", get(healthcheck))
+        .route("/robots.txt", get(robots))
         .route("/:a", get(view_item))
         .route("/:a/", get(view_item))
         .route("/:a/:b", get(view_nested_item))
@@ -617,6 +625,18 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::NO_CONTENT);
         assert_eq!(resp.headers().get(CONTENT_LENGTH).unwrap(), "0");
         assert!(resp.headers().get(CONTENT_TYPE).is_none());
+    }
+
+    #[tokio::test]
+    async fn test_robots() {
+        let app = setup_router();
+        let resp = app
+            .oneshot(Request::builder().uri("/robots.txt").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.headers().get(CONTENT_LENGTH).unwrap(), "58");
+        assert_eq!(resp.headers().get(CONTENT_TYPE).unwrap(), "text/plain; charset=utf-8");
     }
 
     #[test_case("/a"; "plain/a")]
