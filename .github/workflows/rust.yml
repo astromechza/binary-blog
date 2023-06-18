@@ -29,7 +29,7 @@ jobs:
         minor_pattern: "(MINOR)"
         version_format: "${major}.${minor}.${patch}"
     - name: Set crate version
-      run: sed -i 's/X.Y.Z/${{ steps.semver.outputs.version }}/g' Cargo.toml
+      run: sed -i 's/0.0.0/${{ steps.semver.outputs.version }}/g' Cargo.toml
     - name: Inspect toml
       run: cat Cargo.toml
     - name: Set up Docker Buildx
