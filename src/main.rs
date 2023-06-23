@@ -8,12 +8,17 @@ use std::ops::Add;
 use std::str::from_utf8;
 use std::sync::Arc;
 
-use axum::{http, Router, routing::get};
+use axum::{http, middleware, Router, routing::get};
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use clap::{crate_version, Parser};
+use lazy_static::lazy_static;
 use maud::{DOCTYPE, html, Markup, PreEscaped};
+use prometheus::{self, Encoder, IntCounter, TextEncoder};
+use prometheus::proto::{Gauge, Metric, MetricFamily, MetricType};
+use prometheus::register_int_counter;
+use protobuf::RepeatedField;
 use rust_embed::RustEmbed;
 use time::{Date, OffsetDateTime, PrimitiveDateTime};
 use time::format_description::FormatItem;
@@ -67,6 +72,12 @@ const CACHE_CONTROL: &str = "max-age=300";
 const POST_DATE_FORMAT: &[FormatItem] = format_description!("[day padding:none] [month repr:long] [year]");
 const RFC3339_DATE_FORMAT: &[FormatItem] = format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]Z");
 const FOOTER_DATE_FORMAT: &[FormatItem] = RFC3339_DATE_FORMAT;
+
+lazy_static! {
+    static ref START_TIME: std::time::Instant = std::time::Instant::now();
+    static ref REQUESTS_RECEIVED: IntCounter =
+        register_int_counter!("requests", "Number of http requests received").unwrap();
+}
 
 fn collect_posts() -> Vec<Post> {
     let mut options = pulldown_cmark::Options::empty();
@@ -525,18 +536,55 @@ async fn robots() -> Response {
     (StatusCode::OK, headers, "User-agent: *\nAllow: /\nDisallow: /livez\nDisallow: /readyz\n").into_response()
 }
 
+fn generate_uptime_metric() -> MetricFamily {
+    let mut metric = Metric::new();
+    let mut gauge = Gauge::new();
+    let elapsed = std::time::Instant::now().duration_since(*START_TIME);
+    gauge.set_value(elapsed.as_millis() as f64);
+    metric.set_gauge(gauge);
+    let mut rf = RepeatedField::new();
+    rf.push(metric);
+
+    let mut uptime = MetricFamily::new();
+    uptime.set_name(String::from("elapsed_millis"));
+    uptime.set_help(String::from("the last unix timestamp from the container"));
+    uptime.set_metric(rf);
+    uptime.set_field_type(MetricType::GAUGE);
+    return uptime;
+}
+
+async fn metricz() -> Response {
+    let mut buffer = Vec::new();
+    let encoder = TextEncoder::new();
+    let raw = prometheus::gather();
+    let mut metric_families = raw.to_owned();
+    metric_families.push(generate_uptime_metric());
+    encoder.encode(&metric_families, &mut buffer).unwrap();
+    let mut headers = HeaderMap::new();
+    headers.insert(http::header::CONTENT_TYPE, HeaderValue::from_str("text/plain").unwrap());
+    (StatusCode::OK, headers, buffer.clone()).into_response()
+}
+
+async fn metric_layer<B>(request: http::Request<B>, next: middleware::Next<B>) -> Response {
+    REQUESTS_RECEIVED.inc();
+    let response = next.run(request).await;
+    response
+}
+
 fn setup_router() -> Router {
     let state = Arc::new(build_shared_state(collect_posts()));
     Router::new()
         .route("/", get(view_root_item))
         .route("/livez", get(healthcheck))
         .route("/readyz", get(healthcheck))
+        .route("/metricz", get(metricz))
         .route("/robots.txt", get(robots))
         .route("/:a", get(view_item))
         .route("/:a/", get(view_item))
         .route("/:a/:b", get(view_nested_item))
         .fallback(not_found)
         .with_state(state)
+        .layer(middleware::from_fn(metric_layer))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(
@@ -637,6 +685,17 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(resp.headers().get(CONTENT_LENGTH).unwrap(), "58");
         assert_eq!(resp.headers().get(CONTENT_TYPE).unwrap(), "text/plain; charset=utf-8");
+    }
+
+    #[tokio::test]
+    async fn test_metrics() {
+        let app = setup_router();
+        let resp = app
+            .oneshot(Request::builder().uri("/metricz").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.headers().get(CONTENT_TYPE).unwrap(), "text/plain");
     }
 
     #[test_case("/a"; "plain/a")]

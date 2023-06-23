@@ -1,1 +1,5 @@
 # binary-blog
+
+```
+cargo build
+```
