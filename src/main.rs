@@ -38,6 +38,9 @@ struct Cli {
 
     #[arg(long)]
     bind_port: Option<u16>,
+
+    #[arg(long)]
+    external_url_prefix: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -158,7 +161,7 @@ fn collect_posts() -> Vec<Post> {
         .collect::<Vec<Post>>()
 }
 
-fn build_shared_state(mut posts: Vec<Post>) -> SharedState {
+fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: String) -> SharedState {
     posts.reverse();
     tracing::info!("Building shared state from {} posts", posts.len());
 
@@ -198,6 +201,28 @@ fn build_shared_state(mut posts: Vec<Post>) -> SharedState {
         }
 
         root.to_mut().children.insert(x.path.clone(), post_item);
+    }
+
+    {
+        let robots_content = Cow::from("User-agent: *\nAllow: /\nDisallow: /livez\nDisallow: /readyz\n".as_bytes().to_owned());
+        let robots = Cow::Owned(Item {
+            content: robots_content.clone(),
+            content_type: HeaderValue::from_str(PLAIN_CONTENT_TYPE).unwrap(),
+            etag: make_hash_of_bytes(robots_content.clone()).to_string(),
+            children: HashMap::new(),
+        });
+        root.to_mut().children.insert("robots.txt".to_string(), robots);
+    }
+
+    {
+        let rss_content = pre_render_rss(&posts, external_url_prefix);
+        let rss = Cow::Owned(Item {
+            content: rss_content.clone(),
+            content_type: HeaderValue::from_str("application/rss+xml").unwrap(),
+            etag: make_hash_of_bytes(rss_content.clone()).to_string(),
+            children: HashMap::new(),
+        });
+        root.to_mut().children.insert("rss.xml".to_string(), rss);
     }
 
     let not_found = Cow::Owned(Item {
@@ -293,6 +318,10 @@ fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, [u8]> {
                             a href="https://github.com/astromechza" {
                                 "astromechza"
                             }
+                            " | rss: "
+                            a href="/rss.xml" {
+                                "rss.xml"
+                            }
                             hr {}
                         }
                     }
@@ -330,6 +359,33 @@ fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, [u8]> {
                         }
                     }
                     (pre_render_footer())
+                }
+            }
+        }
+    };
+    Cow::from(tree.into_string().as_bytes().to_owned()).to_owned()
+}
+
+fn pre_render_rss(posts: &Vec<Post>, external_url_prefix: String) -> Cow<'static, [u8]> {
+    let tree = html! {
+        (PreEscaped("<?xml version=\"1.0\" encoding=\"UTF-8\" ?>"))
+        rss version="2.0" {
+            channel {
+                title { "Technical blog of Ben Meier" }
+                link { (external_url_prefix) "/" }
+                language { "en" }
+                description { "I'm a software engineer working mostly on distributed systems with an interest in security, networking, correctness, and chaos." }
+                @for x in posts.iter() {
+                    item {
+                        title { (x.title) }
+                        link { (external_url_prefix) "/" (x.path) "/" }
+                        guid { (external_url_prefix) "/" (x.path) "/" }
+                        pubDate { (x.date.format(&RFC3339_DATE_FORMAT).unwrap().to_string()) }
+                        category { "IT/Technical" }
+                        @if x.description.is_some() {
+                            description { (x.description.clone().unwrap()) }
+                        }
+                    }
                 }
             }
         }
@@ -413,6 +469,13 @@ fn pre_render_not_found() -> Cow<'static, [u8]> {
         }
     };
     Cow::from(tree.into_string().as_bytes().to_owned()).to_owned()
+}
+
+fn make_hash_of_bytes(x: Cow<'static, [u8]>) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    hasher.write(CRATE_VERSION.as_bytes());
+    hasher.write(x.as_ref());
+    hasher.finish()
 }
 
 fn make_hash(x: &str, y: &str) -> u64 {
@@ -530,12 +593,6 @@ async fn healthcheck() -> Response {
     (StatusCode::NO_CONTENT).into_response()
 }
 
-async fn robots() -> Response {
-    let mut headers = HeaderMap::new();
-    headers.insert(http::header::CONTENT_TYPE, HeaderValue::from_str(PLAIN_CONTENT_TYPE).unwrap());
-    (StatusCode::OK, headers, "User-agent: *\nAllow: /\nDisallow: /livez\nDisallow: /readyz\n").into_response()
-}
-
 fn generate_uptime_metric() -> MetricFamily {
     let mut metric = Metric::new();
     let mut gauge = Gauge::new();
@@ -571,14 +628,13 @@ async fn metric_layer<B>(request: http::Request<B>, next: middleware::Next<B>) -
     response
 }
 
-fn setup_router() -> Router {
-    let state = Arc::new(build_shared_state(collect_posts()));
+fn setup_router(external_url_prefix: String) -> Router {
+    let state = Arc::new(build_shared_state(collect_posts(), external_url_prefix));
     Router::new()
         .route("/", get(view_root_item))
         .route("/livez", get(healthcheck))
         .route("/readyz", get(healthcheck))
         .route("/metricz", get(metricz))
-        .route("/robots.txt", get(robots))
         .route("/:a", get(view_item))
         .route("/:a/", get(view_item))
         .route("/:a/:b", get(view_nested_item))
@@ -591,7 +647,7 @@ fn setup_router() -> Router {
                     tower_http::trace::DefaultMakeSpan::new().level(tracing::Level::INFO),
                 )
                 .on_response(
-                    tower_http::trace::DefaultOnResponse::new().level(tracing::Level::INFO),
+                    tower_http::trace::DefaultOnResponse::new().include_headers(true).level(tracing::Level::INFO),
                 ),
         )
 }
@@ -605,7 +661,7 @@ async fn main() {
         args.bind_port.unwrap_or(8080),
     ));
 
-    let app = setup_router().into_make_service();
+    let app = setup_router(args.external_url_prefix.unwrap_or("".to_string())).into_make_service();
     let svr = axum::Server::bind(&addr).serve(app);
 
     tracing::info!("server is listening on {}...", svr.local_addr());
@@ -627,7 +683,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_index() {
-        let app = setup_router();
+        let app = setup_router("http://example".to_string());
         let resp = app
             .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
             .await
@@ -653,7 +709,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_livez() {
-        let app = setup_router();
+        let app = setup_router("http://example".to_string());
         let resp = app
             .oneshot(Request::builder().uri("/livez").body(Body::empty()).unwrap())
             .await
@@ -665,7 +721,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_readyz() {
-        let app = setup_router();
+        let app = setup_router("http://example".to_string());
         let resp = app
             .oneshot(Request::builder().uri("/readyz").body(Body::empty()).unwrap())
             .await
@@ -677,7 +733,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_robots() {
-        let app = setup_router();
+        let app = setup_router("http://example".to_string());
         let resp = app
             .oneshot(Request::builder().uri("/robots.txt").body(Body::empty()).unwrap())
             .await
@@ -685,17 +741,32 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(resp.headers().get(CONTENT_LENGTH).unwrap(), "58");
         assert_eq!(resp.headers().get(CONTENT_TYPE).unwrap(), "text/plain; charset=utf-8");
+        assert!(resp.headers().get(ETAG).is_some());
+        assert_eq!(resp.headers().get(CACHE_CONTROL).unwrap(), "max-age=300");
     }
 
     #[tokio::test]
     async fn test_metrics() {
-        let app = setup_router();
+        let app = setup_router("http://example".to_string());
         let resp = app
             .oneshot(Request::builder().uri("/metricz").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(resp.headers().get(CONTENT_TYPE).unwrap(), "text/plain");
+    }
+
+    #[tokio::test]
+    async fn test_rss() {
+        let app = setup_router("http://example".to_string());
+        let resp = app
+            .oneshot(Request::builder().uri("/rss.xml").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.headers().get(CONTENT_TYPE).unwrap(), "application/rss+xml");
+        assert!(resp.headers().get(ETAG).is_some());
+        assert_eq!(resp.headers().get(CACHE_CONTROL).unwrap(), "max-age=300");
     }
 
     #[test_case("/a"; "plain/a")]
@@ -705,7 +776,7 @@ mod tests {
     #[test_case("/a/b/c"; "plain/a/b/c")]
     #[tokio::test]
     async fn test_plain_404(uri: &str) {
-        let app = setup_router();
+        let app = setup_router("http://example".to_string());
         let resp = app
             .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
             .await
@@ -722,7 +793,7 @@ mod tests {
     #[test_case("/a/b/c"; "html/a/b/c")]
     #[tokio::test]
     async fn test_html_404(uri: &str) {
-        let app = setup_router();
+        let app = setup_router("http://example".to_string());
         let mut req = Request::builder().uri(uri);
         req.headers_mut()
             .unwrap()
@@ -752,7 +823,7 @@ mod tests {
     #[test_case("/a/b/c", 404; "post/a/b/c")]
     #[tokio::test]
     async fn test_post(uri: &str, code: u16) {
-        let app = setup_router();
+        let app = setup_router("http://example".to_string());
         let resp = app
             .oneshot(
                 Request::builder()
@@ -785,7 +856,7 @@ mod tests {
 
         for x in blogs {
             println!("checking {}", x);
-            let app = setup_router();
+            let app = setup_router("http://example".to_string());
             let resp = app
                 .oneshot(
                     Request::builder()
@@ -817,7 +888,7 @@ mod tests {
 
             for y in links {
                 println!("checking {}", y);
-                let app2 = setup_router();
+                let app2 = setup_router("http://example".to_string());
                 let resp2 = app2
                     .oneshot(
                         Request::builder()
