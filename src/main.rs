@@ -75,6 +75,7 @@ const CACHE_CONTROL: &str = "max-age=300";
 const POST_DATE_FORMAT: &[FormatItem] = format_description!("[day padding:none] [month repr:long] [year]");
 const RFC3339_DATE_FORMAT: &[FormatItem] = format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]Z");
 const FOOTER_DATE_FORMAT: &[FormatItem] = RFC3339_DATE_FORMAT;
+const ENCODED_FAVICON: &str = "data:image/svg+xml,%3Csvg version='1.0' xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' viewBox='0 0 64 64' enable-background='new 0 0 64 64' xml:space='preserve'%3E%3Cg%3E%3Cg%3E%3Cpolygon fill='%23F9EBB2' points='46,3.414 46,14 56.586,14 '/%3E%3Cpath fill='%23F9EBB2' d='M45,16c-0.553,0-1-0.447-1-1V2H8C6.896,2,6,2.896,6,4v56c0,1.104,0.896,2,2,2h48c1.104,0,2-0.896,2-2V16 H45z'/%3E%3C/g%3E%3Cpath fill='%23394240' d='M14,26c0,0.553,0.447,1,1,1h34c0.553,0,1-0.447,1-1s-0.447-1-1-1H15C14.447,25,14,25.447,14,26z'/%3E%3Cpath fill='%23394240' d='M49,37H15c-0.553,0-1,0.447-1,1s0.447,1,1,1h34c0.553,0,1-0.447,1-1S49.553,37,49,37z'/%3E%3Cpath fill='%23394240' d='M49,43H15c-0.553,0-1,0.447-1,1s0.447,1,1,1h34c0.553,0,1-0.447,1-1S49.553,43,49,43z'/%3E%3Cpath fill='%23394240' d='M49,49H15c-0.553,0-1,0.447-1,1s0.447,1,1,1h34c0.553,0,1-0.447,1-1S49.553,49,49,49z'/%3E%3Cpath fill='%23394240' d='M49,31H15c-0.553,0-1,0.447-1,1s0.447,1,1,1h34c0.553,0,1-0.447,1-1S49.553,31,49,31z'/%3E%3Cpath fill='%23394240' d='M15,20h16c0.553,0,1-0.447,1-1s-0.447-1-1-1H15c-0.553,0-1,0.447-1,1S14.447,20,15,20z'/%3E%3Cpath fill='%23394240' d='M59.706,14.292L45.708,0.294C45.527,0.112,45.277,0,45,0H8C5.789,0,4,1.789,4,4v56c0,2.211,1.789,4,4,4h48 c2.211,0,4-1.789,4-4V15C60,14.723,59.888,14.473,59.706,14.292z M46,3.414L56.586,14H46V3.414z M58,60c0,1.104-0.896,2-2,2H8 c-1.104,0-2-0.896-2-2V4c0-1.104,0.896-2,2-2h36v13c0,0.553,0.447,1,1,1h13V60z'/%3E%3Cpolygon opacity='0.15' fill='%23231F20' points='46,3.414 56.586,14 46,14 '/%3E%3C/g%3E%3C/svg%3E";
 
 lazy_static! {
     static ref START_TIME: std::time::Instant = std::time::Instant::now();
@@ -239,7 +240,7 @@ fn pre_render_head(title: &String) -> PreEscaped<String> {
     let tree = html! {
         head {
             title { (title) }
-            link rel="shortcut icon" href="data:image/x-icon;," type="image/x-icon";
+            link rel="shortcut icon" href=(ENCODED_FAVICON) type="image/svg+xml";
             link rel="me" href="https://hachyderm.io/@benmeier_";
             meta charset="utf-8";
             meta name="author" content="Ben Meier";
