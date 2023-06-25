@@ -1,8 +1,8 @@
 apiVersion: v2
 name: binary-blog
-version: "X.Y.Z"
+version: "0.0.0"
 kubeVersion: ">= 1.27.0 < 2.0.0"
-appVersion: "X.Y.Z"
+appVersion: "0.0.0"
 description: AstromechZA binary blog
 type: application
 keywords: []
@@ -11,5 +11,5 @@ sources:
 - https://github.com/astromechza/binary-blog
 dependencies: []
 maintainers: []
-deprecatd: false
+deprecated: false
 annotations: {}

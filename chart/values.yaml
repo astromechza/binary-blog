@@ -1,1 +1,4 @@
-{}
+scheme: "http://"
+hostname: binary-blog.local
+image:
+  pullPolicy: IfNotPresent

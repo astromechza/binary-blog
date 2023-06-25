@@ -1,0 +1,29 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: binary-blog-ingress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/name: binary-blog-ingress
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+  annotations:
+    nginx.ingress.kubernetes.io/server-snippet: |
+      location ~* "^/(metricz|readyz|livez)" {
+        deny all;
+        return 403;
+      }
+spec:
+  ingressClassName: public
+  rules:
+    - host: {{ .Values.hostname }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: binary-blog-service
+                port:
+                  name: main
