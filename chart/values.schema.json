@@ -1,7 +1,47 @@
 {
     "$schema": "https://json-schema.org/draft-07/schema#",
-    "properties": {},
-    "required": [],
+    "properties": {
+        "image": {
+            "type": "object",
+            "properties": {
+                "pullPolicy": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": false,
+            "required": [
+                "pullPolicy"
+            ]
+        },
+        "ingress": {
+            "type": "object",
+            "properties": {
+                "hostname": {
+                    "type": "string"
+                },
+                "tls": {
+                    "type": "boolean"
+                },
+                "annotations": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "className": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": false,
+            "required": [
+                "hostname"
+            ]
+        }
+    },
+    "additionalProperties": false,
+    "required": [
+        "ingress"
+    ],
     "title": "Values",
     "type": "object"
 }

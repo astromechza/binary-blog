@@ -56,6 +56,8 @@ jobs:
         version: v3.11.2
     - name: Lint chart
       run: helm lint binary-blog-${{ steps.semver.outputs.version }}.tgz
+    - name: Attempt to template with defaults
+      run: helm template test binary-blog-${{ steps.semver.outputs.version }}.tgz
     - name: Create tag
       if: github.ref == 'refs/heads/main'
       uses: actions/github-script@v5

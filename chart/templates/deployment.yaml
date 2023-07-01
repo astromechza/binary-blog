@@ -28,7 +28,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "--external-url-prefix"
-            - {{ .Values.scheme }}{{ .Values.hostname }}
+            - {{ if .Values.ingress.tls }}https://{{ else }}http://{{ end }}{{ .Values.ingress.hostname }}
           ports:
             - name: main
               containerPort: 8080
@@ -37,12 +37,14 @@ spec:
               path: /livez
               port: main
             initialDelaySeconds: 2
+            timeoutSeconds: 5
             periodSeconds: 2
           readinessProbe:
             httpGet:
               path: /readyz
               port: main
             initialDelaySeconds: 2
+            timeoutSeconds: 5
             periodSeconds: 2
           securityContext:
             allowPrivilegeEscalation: false
