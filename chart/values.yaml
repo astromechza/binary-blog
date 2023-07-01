@@ -1,4 +1,8 @@
-scheme: "http://"
-hostname: binary-blog.local
 image:
   pullPolicy: IfNotPresent
+
+ingress:
+  hostname: binary-blog.local
+  tls: false
+  className: ""
+  annotations: {}

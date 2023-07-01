@@ -18,3 +18,5 @@ spec:
   endpoints:
     - port: main
       path: /metricz
+  targetLabels:
+    - app.kubernetes.io/instance
