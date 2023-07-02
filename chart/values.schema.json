@@ -19,6 +19,12 @@
                 "hostname": {
                     "type": "string"
                 },
+                "extraHostnames": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "tls": {
                     "type": "boolean"
                 },
@@ -34,7 +40,8 @@
             },
             "additionalProperties": false,
             "required": [
-                "hostname"
+                "hostname",
+                "extraHostnames"
             ]
         }
     },

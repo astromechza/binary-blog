@@ -25,10 +25,11 @@ spec:
   tls:
     - hosts:
         - {{ .Values.ingress.hostname | quote }}
-      secretName: {{ printf "%s-tls" .Values.ingress.hostname }}
+      secretName: {{ printf "%s-tls" .Values.ingress.hostname | quote }}
   {{- end }}
   rules:
-    - host: {{ .Values.ingress.hostname | quote }}
+    {{- range (append .Values.ingress.extraHostnames .Values.ingress.hostname)}}
+    - host: {{ . | quote }}
       http:
         paths:
           - path: /
@@ -38,3 +39,4 @@ spec:
                 name: binary-blog-service
                 port:
                   name: main
+    {{- end}}
