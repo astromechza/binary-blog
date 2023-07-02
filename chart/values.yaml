@@ -3,6 +3,7 @@ image:
 
 ingress:
   hostname: binary-blog.local
+  extraHostnames: []
   tls: false
   className: ""
   annotations: {}
