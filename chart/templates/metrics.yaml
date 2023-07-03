@@ -1,7 +1,7 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: binary-blog-service-monitor
+  name: binary-blog-monitor-{{ .Release.Namespace }}-{{ .Release.Name }}
   namespace: monitoring
   labels:
     app.kubernetes.io/instance: {{ .Release.Name }}
