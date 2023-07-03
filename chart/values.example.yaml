@@ -1,0 +1,11 @@
+image:
+  pullPolicy: IfNotPresent
+
+ingress:
+  hostname: binary-blog.local
+  extraHostnames: ["other.hostname.local", "bananas.local"]
+  tls: true
+  className: "sample"
+  annotations:
+    a: b
+    c: d
