@@ -57,7 +57,6 @@ struct Post {
     path: String,
     title: String,
     date: PrimitiveDateTime,
-    description: Option<String>,
     pre_rendered: Cow<'static, [u8]>,
     assets: HashMap<String, Cow<'static, [u8]>>,
 }
@@ -102,7 +101,6 @@ fn collect_posts() -> Vec<Post> {
     options.insert(pulldown_cmark::Options::ENABLE_FOOTNOTES);
 
     let title_re = regex::Regex::new(r#"<meta x-title="(.+)"/?>"#).unwrap();
-    let description_r = regex::Regex::new(r#"<meta x-description="(.+)"/?>"#).unwrap();
 
     Asset::iter()
         .filter(|x| x.ends_with(CONTENT_FILE_NAME))
@@ -131,16 +129,12 @@ fn collect_posts() -> Vec<Post> {
                 .unwrap_or(OffsetDateTime::now_utc().date());
             let parsed_date_time = PrimitiveDateTime::new(parsed_date, time!(0:00));
 
-            let parsed_description = description_r
-                .captures(raw_content)
-                .map(|c| c.get(1).unwrap().as_str().to_owned());
-
             let parser = pulldown_cmark::Parser::new_ext(raw_content, options);
             let mut html_output = String::new();
             pulldown_cmark::html::push_html(&mut html_output, parser);
             let tree: Markup = PreEscaped { 0: html_output };
 
-            let content = pre_render_post(&parsed_title, &parsed_date_time, &parsed_description, &tree);
+            let content = pre_render_post(&parsed_title, &parsed_date_time, &tree);
 
             let mut assets = HashMap::new();
 
@@ -166,7 +160,6 @@ fn collect_posts() -> Vec<Post> {
                 path,
                 title: parsed_title,
                 date: parsed_date_time,
-                description: parsed_description,
                 pre_rendered: content,
                 assets,
             }
@@ -265,6 +258,7 @@ fn pre_render_head(title: &String) -> PreEscaped<String> {
                 "ul { list-style: circle outside; } "
                 "ul li { margin-left: 1em; } "
                 ".index-nav-ul { margin: 0; list-style: circle outside; } "
+                ".text-right { text-align: right; }"
             }
         }
     };
@@ -305,24 +299,14 @@ fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, [u8]> {
     let tree = html! {
         (DOCTYPE)
         html lang="en" {
-            (pre_render_head(&"Technical blog of Ben Meier".to_string()))
+            (pre_render_head(&"Ben Meier".to_string()))
             body {
                 div.container {
                     header.row {
-                        section.column {
-                            h1 { "Technical blog of Ben Meier" }
-                            small {
-                                p {
-                                    "I'm a software engineer working mostly on distributed systems with an interest in security, networking, correctness, and chaos. "
-                                    "All opinions expressed here are my own. "
-                                }
-                                p {
-                                    strong { "Note: " }
-                                    "This blog contains a wide range of content accrued over time and from multiple previous attempts at technical blogging over the course of my career. "
-                                    "I intentionally don't go back and improve or rewrite old posts, so please take old content with a pinch of salt, and I apologise for any broken links."
-                                }
-                            }
-                            br;
+                        section class="column column-25" {
+                            h3 { "Ben Meier" }
+                        }
+                        section class="column text-right" {
                             "Mastodon: "
                             a href="https://hachyderm.io/@benmeier_" {
                                 "@benmeier_@hachyderm.io"
@@ -335,11 +319,23 @@ fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, [u8]> {
                             a href="/rss.xml" {
                                 "rss.xml"
                             }
-                            hr {}
+                            " | "
+                            a href="/" {
+                                "All Posts"
+                            }
                         }
                     }
                     main.row {
                         section.column {
+                            small {
+                                p {
+                                    "I'm a software engineer working mostly on distributed systems with an interest in security, networking, correctness, and chaos. "
+                                    "All opinions expressed here are my own. "
+                                    "This blog contains a wide range of content accrued over time and from multiple previous attempts at technical blogging over the course of my career. "
+                                    "I intentionally don't go back and improve or rewrite old posts, so please take old content with a pinch of salt, and I apologise for any broken links!"
+                                }
+                            }
+                            hr {}
                             nav {
                                 (PreEscaped("<ul class=\"index-nav-ul\">"))
                                 @let mut last_year = 0;
@@ -359,10 +355,6 @@ fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, [u8]> {
                                             a href={ (x.path) "/" } {
                                                 time datetime=(x.date.format(&RFC3339_DATE_FORMAT).unwrap().to_string()) { (x.date.format(&POST_DATE_FORMAT).unwrap().to_string()) }
                                                 (": ") (x.title)
-                                            }
-                                            @if x.description.is_some() {
-                                                br;
-                                                (x.description.clone().unwrap())
                                             }
                                         }
                                     }
@@ -384,7 +376,7 @@ fn pre_render_rss(posts: &Vec<Post>, external_url_prefix: String) -> Cow<'static
         (PreEscaped("<?xml version=\"1.0\" encoding=\"UTF-8\" ?>"))
         rss version="2.0" {
             channel {
-                title { "Technical blog of Ben Meier" }
+                title { "Ben Meier" }
                 link { (external_url_prefix) "/" }
                 language { "en" }
                 description { "I'm a software engineer working mostly on distributed systems with an interest in security, networking, correctness, and chaos." }
@@ -395,9 +387,6 @@ fn pre_render_rss(posts: &Vec<Post>, external_url_prefix: String) -> Cow<'static
                         guid { (external_url_prefix) "/" (x.path) "/" }
                         pubDate { (x.date.format(&RFC3339_DATE_FORMAT).unwrap().to_string()) }
                         category { "IT/Technical" }
-                        @if x.description.is_some() {
-                            description { (x.description.clone().unwrap()) }
-                        }
                     }
                 }
             }
@@ -409,7 +398,6 @@ fn pre_render_rss(posts: &Vec<Post>, external_url_prefix: String) -> Cow<'static
 fn pre_render_post(
     title: &String,
     time: &PrimitiveDateTime,
-    description: &Option<String>,
     content: &PreEscaped<String>,
 ) -> Cow<'static, [u8]> {
     let tree = html! {
@@ -419,27 +407,25 @@ fn pre_render_post(
             body {
                 div.container {
                     header.row {
-                        section.column {
-                            h1 { (title) }
-                            p {
+                        section class="column" {
+                            h3 {
                                 "Ben Meier - "
-                                time datetime=(time.format(&RFC3339_DATE_FORMAT).unwrap().to_string()) { (time.format(&POST_DATE_FORMAT).unwrap().to_string()) }
-                                @match description {
-                                    Some(d) => {
-                                        br;
-                                        (d)
-                                    },
-                                    _ => {}
-                                }
+                                (title)
                             }
-                            a href="../" {
-                                "< Back to the index"
+                        }
+                        section class="column text-right" {
+                            a href="/" {
+                                "All Posts"
                             }
-                            hr {}
                         }
                     }
                     main.row {
                         section.column {
+                            small {
+                                "Ben Meier - "
+                                time datetime=(time.format(&RFC3339_DATE_FORMAT).unwrap().to_string()) { (time.format(&POST_DATE_FORMAT).unwrap().to_string()) }
+                            }
+                            hr {}
                             article {
                                 (content)
                             }
@@ -461,12 +447,13 @@ fn pre_render_not_found() -> Cow<'static, [u8]> {
             body {
                 div.container {
                     header.row {
-                        section.column {
-                            h1 { ("Post not found") }
-                            a href="../" {
-                                "< Back to the index"
+                        section class="column column-25" {
+                            h3 { "Not found" }
+                        }
+                        section class="column text-right" {
+                            a href="/" {
+                                "All Posts"
                             }
-                            hr {}
                         }
                     }
                     main.row {
