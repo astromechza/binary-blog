@@ -210,7 +210,7 @@ fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: String) -> Shar
     }
 
     {
-        let robots_content = Cow::from("User-agent: *\nAllow: /\nDisallow: /livez\nDisallow: /readyz\n".as_bytes().to_owned());
+        let robots_content = Cow::from("User-agent: *\nAllow: /\nDisallow: /livez\nDisallow: /readyz\nDisallow: /metricz\n".as_bytes().to_owned());
         let robots = Cow::Owned(Item {
             content: robots_content.clone(),
             content_type: HeaderValue::from_str(PLAIN_CONTENT_TYPE).unwrap(),
@@ -751,7 +751,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
-        assert_eq!(resp.headers().get(CONTENT_LENGTH).unwrap(), "58");
+        assert_eq!(resp.headers().get(CONTENT_LENGTH).unwrap(), "77");
         assert_eq!(resp.headers().get(CONTENT_TYPE).unwrap(), "text/plain; charset=utf-8");
         assert!(resp.headers().get(ETAG).is_some());
         assert_eq!(resp.headers().get(CACHE_CONTROL).unwrap(), "max-age=300");
