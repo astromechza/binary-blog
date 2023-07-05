@@ -1,5 +1,6 @@
 image:
   pullPolicy: IfNotPresent
+  tag:
 
 ingress:
   hostname: binary-blog.local

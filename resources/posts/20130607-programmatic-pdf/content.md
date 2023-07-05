@@ -1,5 +1,4 @@
 <meta x-title="Programmatic PDF generation"/>
-<meta x-description="(Imported from old blog) Generating PDF output from Python using fpdf"/>
 
 I came across an interesting (and really useful) Python module recently. [PyFPDF](https://code.google.com/p/pyfpdf/) is
 a Python port of the popular php .pdf generation library FPDF. Remarkably it is portable and cross platform due to the

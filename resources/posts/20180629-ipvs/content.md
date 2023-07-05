@@ -1,5 +1,4 @@
 <meta x-title="A Minimal IPVS Load Balancer demo"/>
-<meta x-description="(Imported from old blog)"/>
 
 Over the past couple of days I’ve been investigating various load balancing techniques (Layer 4 and Layer 7) for use with Kubernetes’ (K8s) external load balancers.
 

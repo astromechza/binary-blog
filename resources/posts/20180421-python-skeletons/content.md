@@ -1,5 +1,4 @@
 <meta x-title="Python Skeletons"/>
-<meta x-description="(Imported from old blog) Using spiro for generating simple code repositories based on a template."/>
 
 I write a lot of Python. _Sometimes I even get paid for it._ Most of the time, it’s quick libraries and utilities focused on solving small and specific problems for myself and my general team. As I’ve been doing this, I find myself often wasting time or yack-shaving while I find the same old Hackernews solutions for various setuptools issues or testing flavours. To combat this, I reach for templated project skeletons that I can customise and generate in a single command. For Python, my requirements are generally:
 

@@ -1,5 +1,4 @@
 <meta x-title="Thoughts on a fault injection API"/>
-<meta x-description="(Imported from old blog) Managed fault injection APIs for providing powerful chaos engineering functionality. How about a /faultz endpoint for in-process chaos engineering?"/>
 
 I recently re-watched Kelsey Hightower’s ["Monitoring from the inside"](https://vimeo.com/173610242) (2016) talk regarding leveraging healthcheck endpoints for readiness monitoring of services in a Kubernetes context and it set some seeds going in my mind. I’ve been using `/healthcheck` or `/healthz` endpoints for a while now, using them to debug issues or just view service specific facts while a service runs. In the same team, we’ve also been making a push towards various deep integration tests to increase code coverage inside various asynchronous workflows during CI/CD periods. One of the things we needed was a way to trigger failures in these workflows **on purpose**. _We’d rather the workflow ended gracefully with an explicit failure message rather than causing uncontrolled failure of other unrelated systems or workflows._
 

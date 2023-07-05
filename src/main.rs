@@ -259,6 +259,9 @@ fn pre_render_head(title: &String) -> PreEscaped<String> {
                 "ul li { margin-left: 1em; } "
                 ".index-nav-ul { margin: 0; list-style: circle outside; } "
                 ".text-right { text-align: right; }"
+                "body { background-color: #fdfae9; }"
+                ".footnote-definition { margin-bottom: 2em; }"
+                ".footnote-definition p { display: inline; }"
             }
         }
     };
@@ -304,7 +307,7 @@ fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, [u8]> {
                 div.container {
                     header.row {
                         section class="column column-25" {
-                            h3 { "Ben Meier" }
+                            h1 { "Ben Meier" }
                         }
                         section class="column text-right" {
                             "Mastodon: "
@@ -408,12 +411,9 @@ fn pre_render_post(
                 div.container {
                     header.row {
                         section class="column" {
-                            h3 {
-                                "Ben Meier - "
-                                (title)
-                            }
+                            h1 { (title) }
                         }
-                        section class="column text-right" {
+                        section class="column column-20 text-right" {
                             a href="/" {
                                 "All Posts"
                             }
@@ -448,7 +448,7 @@ fn pre_render_not_found() -> Cow<'static, [u8]> {
                 div.container {
                     header.row {
                         section class="column column-25" {
-                            h3 { "Not found" }
+                            h1 { "Not found" }
                         }
                         section class="column text-right" {
                             a href="/" {

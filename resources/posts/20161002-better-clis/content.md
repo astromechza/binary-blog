@@ -1,5 +1,4 @@
 <meta x-title="Building better command-line tools and applications"/>
-<meta x-description="(Imported from old blog) A collection of tips and tricks for writing CLI-driven tools and applications. None of these are official guidelines of any kind but rather just the things I like to keep in mind when writing executable binaries, scripts, and even larger applications. Of course, not all of these always apply, but they're nice to have."/>
 
 ### 1. Always use a proper option parser.
 

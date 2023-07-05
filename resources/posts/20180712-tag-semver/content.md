@@ -1,5 +1,4 @@
 <meta x-title="Git tag-based auto-versioning scheme"/>
-<meta x-description="(Imported from old blog)"/>
 
 **Versioning is difficult.** I'd partly argue that this is the case because there are just so many different methods and strategies!
 
