@@ -1,5 +1,4 @@
 <meta x-title="Personal Finance Thoughts"/>
-<meta x-description="(Imported from old blog)"/>
 
 # Intro
 

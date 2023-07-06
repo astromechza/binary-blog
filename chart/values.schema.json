@@ -6,6 +6,9 @@
             "properties": {
                 "pullPolicy": {
                     "type": "string"
+                },
+                "tag": {
+                    "type": ["string", "null"]
                 }
             },
             "additionalProperties": false,

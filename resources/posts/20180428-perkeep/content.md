@@ -1,5 +1,4 @@
 <meta x-title="Messing around with Perkeep"/>
-<meta x-description="(Imported from old blog)"/>
 
 [Perkeep](https://perkeep.org/) is a project authored by [Brad Fitzpatrick](https://twitter.com/bradfitz) (of Go fame). It aims to be a good solution to long term, self-hosted, personal data storage and ticks many of the boxes I’ve been looking for.
 

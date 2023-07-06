@@ -1,5 +1,4 @@
 <meta x-title="Malicious Facebook plugin analysis"/>
-<meta x-description="(Imported from old blog) Decoding the javascript behind a malicious Facebook plugin."/>
 
 An interesting payload was being passed around Facebook last night. It took the form of an enticing plugin that claimed
 to change the colour of one’s Facebook. I first came across it when I was apparently ‘tagged’ in a photo.

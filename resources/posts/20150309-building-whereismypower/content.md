@@ -1,5 +1,4 @@
 <meta x-title="Building whereismypower.co.za"/>
-<meta x-description="(Imported from old blog) Extracting and processing data related to electricity load shedding in South Africa."/>
 
 This post covers the creation of [whereismypower.co.za](http://whereismypower.co.za), a load shedding schedule website I developed as a side project. 
 

@@ -1,5 +1,4 @@
 <meta x-title="Coordinated Omission in load measurements"/>
-<meta x-description="(Imported from old blog)"/>
 
 Many people have written about "Coordinated Omission" before. The talks and posts that first made me aware (and helped me to understand) the issue were:
 

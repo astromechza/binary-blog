@@ -1,5 +1,4 @@
 <meta x-title="Building an NTP agent"/>
-<meta x-description="(Imported from old blog) Building an ntp synchronisation tool in Go from first principals."/>
 
 My home/media server has a small Grafana instance with a [Spoon](http://github.com/AstromechZA/spoon)
 instance collecting and reporting metrics to it (network stats, disk usage, etc..). It's been

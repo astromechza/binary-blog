@@ -1,5 +1,4 @@
 <meta x-title="The road to hyperthreading"/>
-<meta x-description="(Imported from old blog) A brief overview of how CPU architecture has brought us to hyperthreading via instruction pipelining and superscalar architectures.."/>
 
 -----
 
