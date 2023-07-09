@@ -28,6 +28,8 @@ use time::macros::{format_description, time};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber;
 
+use deflate::deflate_bytes;
+
 #[derive(RustEmbed)]
 #[folder = "resources/"]
 struct Asset;
@@ -48,6 +50,7 @@ struct Cli {
 #[derive(Clone, Debug)]
 struct Item {
     content: Cow<'static, [u8]>,
+    compressed: Cow<'static, [u8]>,
     content_type: HeaderValue,
     etag: String,
     children: HashMap<String, Cow<'static, Item>>,
@@ -170,8 +173,10 @@ fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: String) -> Shar
     posts.reverse();
     tracing::info!("Building shared state from {} posts", posts.len());
 
+    let root_content = pre_render_index(&posts);
     let mut root: Cow<'static, Item> = Cow::Owned(Item {
-        content: pre_render_index(&posts),
+        content: root_content.clone(),
+        compressed: Cow::from(deflate_bytes(root_content.as_ref())),
         content_type: HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap(),
         etag: make_hash("", "").to_string(),
         children: HashMap::new(),
@@ -180,6 +185,7 @@ fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: String) -> Shar
     for x in &posts {
         let mut post_item: Cow<'static, Item> = Cow::Owned(Item {
             content: x.pre_rendered.clone(),
+            compressed: Cow::from(deflate_bytes(x.pre_rendered.as_ref())),
             content_type: HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap(),
             etag: make_hash(x.title.as_str(), "").to_string(),
             children: HashMap::new(),
@@ -188,6 +194,7 @@ fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: String) -> Shar
         for y in x.assets.clone() {
             let asset_item = Cow::Owned(Item {
                 content: y.1.clone(),
+                compressed: Cow::from(deflate_bytes(y.1.as_ref())),
                 content_type: HeaderValue::from_str(mime_guess::from_path(y.0.as_str()).first_or_text_plain().to_string().as_str()).unwrap(),
                 etag: make_hash(x.title.as_str(), y.0.as_str()).to_string(),
                 children: HashMap::new(),
@@ -202,6 +209,7 @@ fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: String) -> Shar
         let robots_content = Cow::from("User-agent: *\nAllow: /\nDisallow: /livez\nDisallow: /readyz\nDisallow: /metricz\n".as_bytes().to_owned());
         let robots = Cow::Owned(Item {
             content: robots_content.clone(),
+            compressed: Cow::from(deflate_bytes(robots_content.as_ref())),
             content_type: HeaderValue::from_str(PLAIN_CONTENT_TYPE).unwrap(),
             etag: make_hash_of_bytes(robots_content.clone()).to_string(),
             children: HashMap::new(),
@@ -213,6 +221,7 @@ fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: String) -> Shar
         let rss_content = pre_render_rss(&posts, external_url_prefix);
         let rss = Cow::Owned(Item {
             content: rss_content.clone(),
+            compressed: Cow::from(deflate_bytes(rss_content.as_ref())),
             content_type: HeaderValue::from_str("application/rss+xml").unwrap(),
             etag: make_hash_of_bytes(rss_content.clone()).to_string(),
             children: HashMap::new(),
@@ -220,8 +229,10 @@ fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: String) -> Shar
         root.to_mut().children.insert("rss.xml".to_string(), rss);
     }
 
+    let not_found_content = pre_render_not_found();
     let not_found = Cow::Owned(Item {
-        content: pre_render_not_found(),
+        content: not_found_content.clone(),
+        compressed: Cow::from(deflate_bytes(not_found_content.as_ref())),
         content_type: HeaderValue::from_str(HTML_CONTENT_TYPE).unwrap(),
         etag: make_hash("", "").to_string(),
         children: HashMap::new(),
@@ -573,9 +584,17 @@ async fn view_nested_item(
         http::header::CACHE_CONTROL,
         HeaderValue::from_str(CACHE_CONTROL).unwrap(),
     );
+    headers.insert(http::header::X_FRAME_OPTIONS, HeaderValue::from_str("DENY").unwrap());
+    headers.insert(http::header::CONTENT_SECURITY_POLICY, HeaderValue::from_str("default-src 'self'").unwrap());
 
     if let Some(not_modified) = check_etag_and_return(x.etag.clone(), &req_headers, &headers) {
         return not_modified;
+    }
+
+    let ae_header = req_headers.get(http::header::ACCEPT_ENCODING);
+    if ae_header.is_some() && ae_header.unwrap().to_str().unwrap().contains("deflate") {
+        headers.insert(http::header::CONTENT_ENCODING, HeaderValue::from_str("deflate").unwrap());
+        return (StatusCode::OK, headers, x.compressed.clone()).into_response();
     }
 
     (StatusCode::OK, headers, x.content.clone()).into_response()
@@ -679,6 +698,7 @@ mod tests {
     use axum::body::Body;
     use axum::http::{HeaderValue, Method, Request, StatusCode};
     use axum::http::header::{ACCEPT, CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE, ETAG};
+    use hyper::header::{ACCEPT_ENCODING, CONTENT_ENCODING};
     // for `oneshot` and `ready`
     use test_case::test_case;
     use tower::ServiceExt;
@@ -708,7 +728,20 @@ mod tests {
             .unwrap();
         assert!(length > 1);
         assert!(resp.headers().get(ETAG).is_some());
+        assert!(resp.headers().get(CONTENT_ENCODING).is_none());
         assert_eq!(resp.headers().get(CACHE_CONTROL).unwrap(), "max-age=300");
+    }
+
+    #[tokio::test]
+    async fn test_index_gzipped() {
+        let app = setup_router("http://example".to_string());
+        let resp = app
+            .oneshot(Request::builder().uri("/").header(ACCEPT_ENCODING, HeaderValue::from_str("deflate,gzip").unwrap()).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.headers().get(CONTENT_ENCODING).unwrap(), "deflate");
     }
 
     #[tokio::test]
