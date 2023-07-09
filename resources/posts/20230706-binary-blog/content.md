@@ -25,14 +25,8 @@ And at run time:
 
 Since everything is pre-rendered, serving requests is fast since everything is in memory already and can be copied to the output relatively fast with minimal translation. By supporting `Cache-Control` headers and `If-None-Match` and `Etag`, we can try to persuade browsers to only pull content when needed.
 
-The CSS, based on [milligram](https://milligram.io/), is compiled into one document and served when needed.
-
-So in general, each blog post is only a few requests:
-
-1. load the page HTML (content is only returned if the Etag has changed) (< 10kB)
-    - Note that the favicon is included here inline and base64 encoded
-2. load the css payload if not cached already (~ 6kB)
-3. no javascript, no tracking cookies
+The CSS, based on [milligram](https://milligram.io/), is compiled into one document and inlined into the page since it's only about 6 kB.
+Similarly the favicon is base64 encoded and inlined in the HTML head.
 
 All in all, it's super fast and light weight and doesn't look half-bad. It gets built into a tiny Docker image and Helm chart by the Github CI pipeline.
 
