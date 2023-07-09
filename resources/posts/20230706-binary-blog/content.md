@@ -30,8 +30,9 @@ The CSS, based on [milligram](https://milligram.io/), is compiled into one docum
 So in general, each blog post is only a few requests:
 
 1. load the page HTML (content is only returned if the Etag has changed) (< 10kB)
-2. load the css payload if not cached already (17kB)
-3. an additional request per image in the post, the favicon is base64 encoded in the HTML and doesn't incur an additional request.
+    - Note that the favicon is included here inline and base64 encoded
+2. load the css payload if not cached already (~ 6kB)
+3. no javascript, no tracking cookies
 
 All in all, it's super fast and light weight and doesn't look half-bad. It gets built into a tiny Docker image and Helm chart by the Github CI pipeline.
 
