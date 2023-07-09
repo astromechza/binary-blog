@@ -585,7 +585,7 @@ async fn view_nested_item(
         HeaderValue::from_str(CACHE_CONTROL).unwrap(),
     );
     headers.insert(http::header::X_FRAME_OPTIONS, HeaderValue::from_str("DENY").unwrap());
-    headers.insert(http::header::CONTENT_SECURITY_POLICY, HeaderValue::from_str("default-src 'self'").unwrap());
+    headers.insert(http::header::CONTENT_SECURITY_POLICY, HeaderValue::from_str("default-src 'self' 'unsafe-inline';").unwrap());
 
     if let Some(not_modified) = check_etag_and_return(x.etag.clone(), &req_headers, &headers) {
         return not_modified;
