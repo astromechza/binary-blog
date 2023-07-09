@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4.1", features = ["derive", "cargo"] }
+deflate = "1.0.0"
 pulldown-cmark = "0.9"
 lazy_static = "1.4"
 convert_case = "0.6.0"
