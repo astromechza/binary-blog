@@ -68,7 +68,6 @@ struct SharedState {
 
 const CONTENT_FILE_NAME: &str = "content.md";
 const HTML_CONTENT_TYPE: &str = "text/html; charset=utf-8";
-const CSS_CONTENT_TYPE: &str = "text/css; charset=utf-8";
 const PLAIN_CONTENT_TYPE: &str = "text/plain; charset=utf-8";
 const CRATE_VERSION: &str = crate_version!();
 const CACHE_CONTROL: &str = "max-age=300";
@@ -178,16 +177,6 @@ fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: String) -> Shar
         children: HashMap::new(),
     });
 
-    let css1 = Asset::get("normalize.css").unwrap().data.to_owned();
-    let css2 = Asset::get("milligram.css").unwrap().data.to_owned();
-    let style_item = Cow::Owned(Item {
-        content: Cow::Owned([css1, css2].concat().to_owned()),
-        content_type: HeaderValue::from_str(CSS_CONTENT_TYPE).unwrap(),
-        etag: make_hash("style.css", "").to_string(),
-        children: HashMap::new(),
-    });
-    root.to_mut().children.insert("style.css".to_string(), style_item);
-
     for x in &posts {
         let mut post_item: Cow<'static, Item> = Cow::Owned(Item {
             content: x.pre_rendered.clone(),
@@ -242,6 +231,8 @@ fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: String) -> Shar
 }
 
 fn pre_render_head(title: &String) -> PreEscaped<String> {
+    let css1 = from_utf8(Asset::get("normalize.css").unwrap().data.as_ref()).unwrap().to_owned();
+    let css2 = from_utf8(Asset::get("milligram.css").unwrap().data.as_ref()).unwrap().to_owned();
     let tree = html! {
         head {
             title { (title) }
@@ -252,8 +243,9 @@ fn pre_render_head(title: &String) -> PreEscaped<String> {
             meta name="description" content="Technical blog of Ben Meier";
             meta name="keywords" content="golang, rust, distributed systems, programming, security";
             meta name="viewport" content="width=device-width, initial-scale=1.0";
-            link rel="stylesheet" href="/style.css";
             style {
+                (css1)
+                (css2)
                 "pre code { white-space: pre-wrap; } "
                 "ul { list-style: circle outside; } "
                 "ul li { margin-left: 1em; } "
@@ -345,7 +337,7 @@ fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, [u8]> {
                                 @for x in posts.iter() {
                                     @if x.date.year() != last_year {
                                         (PreEscaped("</ul>"))
-                                        h4 {
+                                        h2 {
                                             ({
                                                 last_year = x.date.year();
                                                 last_year
