@@ -27,15 +27,23 @@ and dispatch additional instructions while already dispatched instructions are s
 
 For example:
 
-- first stage extracts an instruction from the cache
-- second stage decodes the instruction
-- third stage translates memory addresses
-- fourth stage executes the instruction
-- fifth stage writes the results back to the registers and memory
+- first stage extracts an instruction from the cache (`IF`)
+- second stage decodes the instruction (`ID`)
+- third stage executes the instruction (`EX`)
+- with any necessary memory access (`MEM`)
+- fifth stage writes the results back to the registers and memory (`WB`)
 
-We can have a piece of work in each of the stages above at any time.
+We can have a piece of work in each of the stages above at any time. In the following table, a sequence of instructions moves through each of the 5 phases before it is "completed". However an 
 
-![pipelined instructions](http://www.gamedev.net/uploads/monthly_05_2013/ccs-78358-0-60361400-1367786551.png)
+| Intr. No | Cycle 1 | 2   | 3   | 4   | 5   | 6   | 7   |
+|----------|---------|-----|-----|-----|-----|-----|-----|
+| 1        | IF      | ID  | EX  | MEM | WB  |     |     |
+| 2        |         | IF  | ID  | EX  | MEM | WB  |     | 
+| 3        |         |     | IF  | ID  | EX  | MEM | WB  |
+| 4        |         |     |     | IF  | ID  | EX  | MEM |
+| 5        |         |     |     |     | IF  | ID  | EX  |
+
+Naturally, instructions that depend on the result of the previous one, must wait and the processor will spend that time doing nothing, or handling a different instruction.
 
 This was first used around 1940 but became very useful in the late 1970's in
 supercomputers dedicated to vector and array processing. You can see how needing
@@ -68,7 +76,7 @@ current execution state for a thread, the dispatcher can execute instructions
 for either of the threads and it can more effectively take advantage of all of
 the execution units.
 
-![Image of multiple architectural states](http://m.eet.com/media/1073565/optimizing_embedded_designs_fig1.jpg)
+![Image of multiple architectural states](optimizing_embedded_designs_fig1.jpg.webp)
 
 Normally, the short-term cpu scheduler can only allocate a single thread onto a
 cpu at a time. This context switch happens once every time slices, or when specific
