@@ -2,7 +2,7 @@
 
 [Perkeep](https://perkeep.org/) is a project authored by [Brad Fitzpatrick](https://twitter.com/bradfitz) (of Go fame). It aims to be a good solution to long term, self-hosted, personal data storage and ticks many of the boxes I’ve been looking for.
 
-![perkeep](perkeep.png)
+![perkeep](perkeep.png.webp)
 
 For a long time I’ve been looking for a good data storage solution that combines storage of data files (personal documents, photos, etc) and ties in nicely with the whole idea of “quantified-self”. I’d like to be able to store things like financial records (double entry accounting entries); health records like weight, exercise, runs; gps logs; and most critically, be in full control of the data and be able to migrate it between platforms and build projects on top of this data.
 

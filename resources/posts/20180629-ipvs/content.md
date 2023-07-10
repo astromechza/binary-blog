@@ -4,7 +4,7 @@ Over the past couple of days I’ve been investigating various load balancing te
 
 For context: in a well deployed cluster, you will probably use a K8s ingress controller implementation to route traffic to particular apps and services using complex L7 routing rules (like Host headers, cookies-stickiness, etc..). However this still means that the TCP connections may be hitting a single node in the cluster if you have DNS set up that way. It is often necessary then to add a external L4 IP load balancer outside of the K8s cluster that balances traffic between all of the node’s running your ingress controller.
 
-![loadbalanced-ingress](lb-ingress.png)
+![loadbalanced-ingress](lb-ingress.png.webp)
 
 There are many services that can do Layer 4 load balancing: Nginx/Nginx Plus, HAProxy, and the one we’ll look at today, IPVS.
 

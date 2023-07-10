@@ -28,9 +28,23 @@ Since everything is pre-rendered, serving requests is fast since everything is i
 The CSS, based on [milligram](https://milligram.io/), is compiled into one document and inlined into the page since it's only about 6 kB.
 Similarly the favicon is base64 encoded and inlined in the HTML head. Everything is served with optional `deflate` compression.
 
-All in all, it's super fast and light weight and doesn't look half-bad. It gets built into a tiny Docker image and Helm chart by the Github CI pipeline.
+All in all, it's fast and light-weight and doesn't look half-bad. It gets built into a tiny Docker image and Helm chart by the Github CI pipeline.
 
-The only thing still needing optimisation content wise is the images since I haven't put _any_ effort into re-encoding or optimising them for the web.
+### Webp image compression
+
+I use a Makefile to ensure images have a [webp](https://developers.google.com/speed/webp) compressed alternative. Webp supports transparency and is always typical 3x smaller than PNGs and 25% smaller than JPEG. 
+
+```Makefile
+IMAGE_FILES = $(shell find $(PWD)/resources -type f -name *.jpeg) $(shell find $(PWD)/resources  -type f -name *.png) $(shell find $(PWD)/resources  -type f -name *.jpg)
+WEBP_FILES = $(addsuffix .webp,$(IMAGE_FILES))
+
+$(WEBP_FILES): $(basename $@)
+	cwebp $(basename $@) -o $@ -q 80
+
+## Generate webp variants of all images
+.PHONY: generate-webp
+generate-webp: $(WEBP_FILES)
+```
 
 ## Hosting
 
@@ -38,13 +52,13 @@ The blog is hosted in a production and "staging" configuration on the [Hensteeth
 
 It's best to understand as a diagram:
 
-![diagram showing k8s deployment, port forwarding, and google load balancer](blog-infra.drawio.png)
+![diagram showing k8s deployment, port forwarding, and google load balancer](blog-infra.drawio.png.webp)
 
 The global load balancer is important to me as it gives the blog edge-style caching, with HTTP-to-HTTPS redirection without putting my home IP address right at the cliff face. This unfortunately incurs the main cost of the project: it relies on 1 or 2 static IP addresses set up for any-cast to the GCP endpoints.
 
 Certificates on the LB are done with Googles certificate management and DNS challenges.
 
-![traffic flow with caching](flow.png)
+![traffic flow with caching](flow.png.webp)
 
 I've been using GCP here because thats where I've had by DNS zone hosted in the past, and the global load balancer was attractive. Unfortunately, I've been finding some of the GCP experience, especially around monitoring and metrics, quite poor so I'm probably going to look towards a different solution in the future. It won't be Cloudflare, and BunnyCDN lacked a good solution for allow-listing the incoming ip range between the CDN and my home router. Thankfully as everything is set up with Terraform it's relatively easy to move!
 

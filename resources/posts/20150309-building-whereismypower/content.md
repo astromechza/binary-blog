@@ -20,7 +20,7 @@ When load shedding was first implemented, the City of Cape Town municipality rel
 
 Here is an example of the initial stage 1 and stage 2 timetables:
 
-![Stage 1 & 2 Week Timetable](s1_2weekly.jpg)
+![Stage 1 & 2 Week Timetable](s1_2weekly.jpg.webp)
 
 As you can see they are pretty hard to read! Therefore an easy to use website that interpreted and presented this data was a necessity.
 
@@ -120,7 +120,7 @@ This data was then inserted into the database in the following model:
 
 The `outages` columns have a string of the form `"00:00-00:30|04:00-06:30|10:00-12:30|16:00-18:30"` indicating the different times that area would be load shed on that day under the given schedule. This schema worked well in the beginning when the website was still simple but was changed over time in order to support more interesting queries.
 
-![Map page](pdf_map.jpg)
+![Map page](pdf_map.jpg.webp)
 
 The most difficult part of the data collection was extracting the irregular 2d areas from the PDF that represented the 16 areas on the map. I wanted to create my own slippy map (pan & zoom) to show the areas so that users could easily identify exactly which area they fell into. The great thing about the PDF provided by the City was that the **area map was still in SVG format!** I used `Inkscape`, a popular vector graphics editor to load in the PDF and isolate the SVG elements representing the map. I then exported it into a text based representation (*.fx) that could be easily parsed. I worked out a basic understanding of how the format worked I managed to extract the coordinates of the points representing the polygons in page-space. These still needed to be converted into gps coordinate space in order to be shown on a Google Maps canvas. This step was accomplished by identifying 3 key points that I could identify the real gps coordinates for, and building a matrix transform that mapped the `x, y` coordinates of the SVG points into `latitude, longitude` coordinates. After processing all the points in this way, I could get accurate maps of each load shedding area.
 
@@ -168,10 +168,10 @@ Initially the website had 4 main pages:
 3. The map page where users could see a visual representation of Cape Town's load shedding areas.
 
 
-![Pick Area](v1_main.jpg)
-![Pick Schedule](v1_area.jpg)
-![Show Schedule](v1_schedule.jpg)
-![Map page](v1_map.jpg)
+![Pick Area](v1_main.jpg.webp)
+![Pick Schedule](v1_area.jpg.webp)
+![Show Schedule](v1_schedule.jpg.webp)
+![Map page](v1_map.jpg.webp)
 
 As the screenshots above show, I also added a function that polls the Cape Town city load shedding page to identify when load shedding is actually active. The status is shown in a banner at the top of the page. Tags on the schedule pages also highlight the current time row as well the current stage IF load shedding is underway.
 
@@ -181,7 +181,7 @@ At this point it was around the beginning of December 2015 and the website was s
 
 In January, Cape Town announced it would be moving to a new schedule system. This was annoying. The new system was a result of allegations that the previous schedule was unfair and load shed certain areas less than others. It was converted to a monthly schedule and again made available as a pdf:
 
-![New Schedule](pdf_sch2.jpg)
+![New Schedule](pdf_sch2.jpg.webp)
 
 ## Data collection v2
 The new schedule was substantially more data. It was easy to see that it followed a pattern so I decided to reverse the algorithm that was used to generate it. This was relatively easy and used a set of sliding, repeating ranges that evenly distributed the load shedding across all areas over the entire month.
@@ -286,7 +286,7 @@ if __name__ == '__main__':
 ## New Schema and Features
 The new monthly schedule meant a substantial schema change for the database. I had also received requests for an API in order to support other sites or mobile apps. The new schema is more granular and also includes indexes and optimised pre-calculated columns that make more complex queries more efficient.
 
-![Schema 2](schema2.jpg)
+![Schema 2](schema2.jpg.webp)
 
 #### New features
 - Daily and monthly schedule views
@@ -297,10 +297,10 @@ The new monthly schedule meant a substantial schema change for the database. I h
     + `/api/list_areas` to list the 16 areas
     + `/api/get_schedule` to retrieve the schedule for the given day, stage, and area.
 
-![Pick Area](v2_areas.jpg)
-![Show Day](v2_day.jpg)
-![Show Month](v2_month.jpg)
-![Api page](v2_api.jpg)
+![Pick Area](v2_areas.jpg.webp)
+![Show Day](v2_day.jpg.webp)
+![Show Month](v2_month.jpg.webp)
+![Api page](v2_api.jpg.webp)
 
 ### Wrap up
 Since the new schema, not much has changed on the website. Load shedding has become rare due to better national power management, diesel generators, and less down time so in turn page views have dropped off a bit. I've been using Google Analytics to watch the traffic over the last few months and I'll keep it running until no one really needs it anymore.

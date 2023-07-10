@@ -4,14 +4,14 @@ An interesting payload was being passed around Facebook last night. It took the 
 to change the colour of one’s Facebook. I first came across it when I was apparently ‘tagged’ in a photo.
 The photo looked like this:
 
-![FB1](fb1.jpg)
+![FB1](fb1.jpg.webp)
 
 The tagged photo advertises a pretty shiny Facebook conversion tool and asks people to click the link. Some things to
 note: The layout of Facebook in the image is not current, it is definitely an old layout from before Timeline.
 
 Clicking on the link (Incognito mode!) takes you to this page:
 
-![FB2](fb2.jpg)
+![FB2](fb2.jpg.webp)
 
 The screenshot it shows is a bit more reasonable, but is still a pre-timeline layout. A big green button lets you
 install the plugin itself. There are links to a EULA and Terms of Use but these don’t actually display anything
@@ -21,7 +21,7 @@ which seems to be the proper site. This new one has working Terms of Use and EUL
 
 Clicking on the link now blue button shows a Chrome app installer dialog:
 
-![FB3](fb3.jpg)
+![FB3](fb3.jpg.webp)
 
 By this point alarm bells should be ringing, those permission requests are pretty nasty. So now we need to pull the
 source code to find out what it does. I navigated to the Chrome plugins directory and then clicked the “Add” button on

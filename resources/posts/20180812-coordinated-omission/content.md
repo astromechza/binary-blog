@@ -9,7 +9,7 @@ This post is mostly a small attempt for me to rationalise and underline my own u
 
 ## A quick analogy
 
-![Image of people queuing](coffee-queue.jpg)
+![Image of people queuing](coffee-queue.jpg.webp)
 
 Imagine you owned a coffee shop and wanted to determine whether a planned staffing, procedure, or layout change was worth it. Naturally you'd want to gather a bus full of sample participants and have them all go through your shop in both of the configurations over the course of a few hours or a day. To keep the tests consistent, you want to send people in at a fixed rate and have them order the same distributions of things.
 
