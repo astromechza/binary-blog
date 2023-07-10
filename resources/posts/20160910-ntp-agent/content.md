@@ -25,7 +25,7 @@ basically structured like a hierarchy of "strata" with a few super-reliable,
 super-accurate time sources in "Stratum 0" connected to time servers in
 "Stratum 1" with layers of descendent servers in peer-to-peer networks below them.
 
-![NTP strata](stratum.png)
+![NTP strata](stratum.png.webp)
 
 I started going through the process of looking at how to setup NTP update on
 an Ubuntu server, but halfway through that I thought:
@@ -138,7 +138,7 @@ usually packed very densely with information. NTP packets are no different.
 The basic 48 byte packet for both the client and the server looks like the
 following:
 
-![NTP strata](packetfmt.png)
+![NTP strata](packetfmt.png.webp)
 
 So we just have to setup a data structure (`RawPacket`) and some methods to
 encode and decode it to the same 48 byte format.

@@ -24,7 +24,7 @@ One interesting point is that I intentionally opted for no spinning disks or cra
 
 Unfortunately I ended up ordering this while the chip shortage was still in effect, and what should have taken a week or two, took over a month to get to me. Thankfully, it did arrive in the end, but this led to the hostname of the server: `hensteeth` (["as rare as hen's teeth"](https://en.wiktionary.org/wiki/rare_as_hen%27s_teeth)).
 
-![An image of the rack showing Ubiquiti components, NAS, modem, and Hensteeth server](rack-server.jpg)
+![An image of the rack showing Ubiquiti components, NAS, modem, and Hensteeth server](rack-server.jpg.webp)
 
 ## The Kubernetes cluster
 
@@ -62,7 +62,7 @@ Sprinkle in some well-crafted Helm values files to link everything together, and
 
 Here's a screenshot of Grafana's node exporter metrics.
 
-![node exporter metrics screenshot](grafana.png)
+![node exporter metrics screenshot](grafana.png.webp)
 
 I generally lay out the namespaces like the following:
 

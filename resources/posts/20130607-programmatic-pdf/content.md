@@ -43,7 +43,7 @@ pdf.multi_cell(0, 5, text)
 ```
 
 This generates a document that looks like this:
-![PDF Sample](screenshot.13.jpg)
+![PDF Sample](screenshot.13.jpg.webp)
 
 Relatively simple! It produces a slim and efficient pdf document almost instantaneously.
 
