@@ -14,6 +14,7 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use clap::{crate_version, Parser};
+use deflate::deflate_bytes;
 use lazy_static::lazy_static;
 use maud::{DOCTYPE, html, Markup, PreEscaped};
 use prometheus::{self, Encoder, Histogram, HistogramOpts, IntCounter, TextEncoder};
@@ -27,8 +28,6 @@ use time::format_description::FormatItem;
 use time::macros::{format_description, time};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber;
-
-use deflate::deflate_bytes;
 
 #[derive(RustEmbed)]
 #[folder = "resources/"]
@@ -257,7 +256,7 @@ fn pre_render_head(title: &String) -> PreEscaped<String> {
             style {
                 (css1)
                 (css2)
-                "pre code { white-space: pre-wrap; } "
+                "pre code { display: block; white-space: pre-wrap; } "
                 "ul { list-style: circle outside; } "
                 "ul li { margin-left: 1em; } "
                 ".index-nav-ul { margin: 0; list-style: circle outside; } "
