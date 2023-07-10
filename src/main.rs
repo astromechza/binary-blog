@@ -260,10 +260,11 @@ fn pre_render_head(title: &String) -> PreEscaped<String> {
                 "ul { list-style: circle outside; } "
                 "ul li { margin-left: 1em; } "
                 ".index-nav-ul { margin: 0; list-style: circle outside; } "
-                ".text-right { text-align: right; }"
                 "body { background-color: #fdfae9; }"
                 ".footnote-definition { margin-bottom: 2em; }"
                 ".footnote-definition p { display: inline; }"
+                "header.row { justify-content: space-between; }"
+                "header.row section.column { max-width: fit-content; }"
             }
         }
     };
@@ -308,10 +309,10 @@ fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, [u8]> {
             body {
                 div.container {
                     header.row {
-                        section class="column column-25" {
+                        section class="column" {
                             h1 { "Ben Meier" }
                         }
-                        section class="column text-right" {
+                        section class="column" {
                             "Mastodon: "
                             a href="https://hachyderm.io/@benmeier_" {
                                 "@benmeier_@hachyderm.io"
@@ -415,7 +416,7 @@ fn pre_render_post(
                         section class="column" {
                             h1 { (title) }
                         }
-                        section class="column column-20 text-right" {
+                        section class="column" {
                             a href="/" {
                                 "All Posts"
                             }
@@ -449,10 +450,10 @@ fn pre_render_not_found() -> Cow<'static, [u8]> {
             body {
                 div.container {
                     header.row {
-                        section class="column column-25" {
+                        section class="column" {
                             h1 { "Not found" }
                         }
-                        section class="column text-right" {
+                        section class="column" {
                             a href="/" {
                                 "All Posts"
                             }
@@ -584,7 +585,7 @@ async fn view_nested_item(
         HeaderValue::from_str(CACHE_CONTROL).unwrap(),
     );
     headers.insert(http::header::X_FRAME_OPTIONS, HeaderValue::from_str("DENY").unwrap());
-    headers.insert(http::header::CONTENT_SECURITY_POLICY, HeaderValue::from_str("default-src 'self' 'unsafe-inline';").unwrap());
+    headers.insert(http::header::CONTENT_SECURITY_POLICY, HeaderValue::from_str("default-src 'self' 'unsafe-inline'; image-src https://").unwrap());
     headers.insert(http::header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_str("nosniff").unwrap());
 
     if let Some(not_modified) = check_etag_and_return(x.etag.clone(), &req_headers, &headers) {
