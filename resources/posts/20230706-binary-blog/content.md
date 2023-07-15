@@ -25,7 +25,7 @@ And at run time:
 
 Since everything is pre-rendered, serving requests is fast since everything is in memory already and can be copied to the output relatively fast with minimal translation. By supporting `Cache-Control` headers and `If-None-Match` and `Etag`, we can try to persuade browsers to only pull content when needed.
 
-The CSS, based on [milligram](https://milligram.io/), is compiled into one document and inlined into the page since it's only about 6 kB. Similarly, the favicon is base64 encoded and inlined in the HTML head. Everything is served with optional `deflate` compression.
+The CSS, based on [milligram](https://milligram.io/), is compiled into one document and inlined into the page since it's only about 6 kB. Similarly, the favicon is base64 encoded and inlined in the HTML head. Everything is served with optional `deflate` compression. It gets 100% on both Google's [PageSpeed Insights](./pagespeed.png.webp) and [GTMetrix](./gtmetrix.png.webp) which is a bit unnecessary for a static read-only webpage, but worth keeping an eye on.
 
 All in all, it's fast and lightweight and doesn't look half-bad. It gets built into a tiny Docker image and Helm chart by the GitHub CI pipeline.
 
