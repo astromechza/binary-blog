@@ -253,7 +253,7 @@ fn pre_render_head(title: &String) -> PreEscaped<String> {
             meta name="description" content="Technical blog of Ben Meier";
             meta name="keywords" content="golang, rust, distributed systems, programming, security";
             meta name="viewport" content="width=device-width, initial-scale=1.0";
-            style {
+            style nonce="123456789" {
                 (css1)
                 (css2)
                 "pre code { display: block; white-space: pre-wrap; } "
@@ -585,7 +585,7 @@ async fn view_nested_item(
         HeaderValue::from_str(CACHE_CONTROL).unwrap(),
     );
     headers.insert(http::header::X_FRAME_OPTIONS, HeaderValue::from_str("DENY").unwrap());
-    headers.insert(http::header::CONTENT_SECURITY_POLICY, HeaderValue::from_str("default-src 'self' 'unsafe-inline'; image-src https://").unwrap());
+    headers.insert(http::header::CONTENT_SECURITY_POLICY, HeaderValue::from_str("default-src 'none'; style-src 'nonce-123456789'; img-src 'self' data: https:").unwrap());
     headers.insert(http::header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_str("nosniff").unwrap());
 
     if let Some(not_modified) = check_etag_and_return(x.etag.clone(), &req_headers, &headers) {
