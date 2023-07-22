@@ -95,7 +95,7 @@ lazy_static! {
         register_histogram!(HistogramOpts::new("response_latency_ms".to_string(), "Response latency in milliseconds".to_string()).const_label("status_family", "5xx")).unwrap();
 }
 
-fn collect_posts() -> Vec<Post> {
+fn collect_posts(external_url_prefix: &String) -> Vec<Post> {
     let mut options = pulldown_cmark::Options::empty();
     options.insert(pulldown_cmark::Options::ENABLE_STRIKETHROUGH);
     options.insert(pulldown_cmark::Options::ENABLE_TABLES);
@@ -135,7 +135,7 @@ fn collect_posts() -> Vec<Post> {
             pulldown_cmark::html::push_html(&mut html_output, parser);
             let tree: Markup = PreEscaped { 0: html_output };
 
-            let content = pre_render_post(&parsed_title, &parsed_date_time, &tree);
+            let content = pre_render_post(&parsed_title, &parsed_date_time, &tree, &external_url_prefix, &path);
 
             let mut assets = HashMap::new();
 
@@ -168,11 +168,11 @@ fn collect_posts() -> Vec<Post> {
         .collect::<Vec<Post>>()
 }
 
-fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: String) -> SharedState {
+fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: &String) -> SharedState {
     posts.reverse();
     tracing::info!("Building shared state from {} posts", posts.len());
 
-    let root_content = pre_render_index(&posts);
+    let root_content = pre_render_index(&posts, external_url_prefix);
     let mut root: Cow<'static, Item> = Cow::Owned(Item {
         content: root_content.clone(),
         compressed: Cow::from(deflate_bytes(root_content.as_ref())),
@@ -180,6 +180,16 @@ fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: String) -> Shar
         etag: make_hash("", "").to_string(),
         children: HashMap::new(),
     });
+
+    let url_image_data = Asset::get("url-image.jpg").unwrap().data;
+    let url_image_item = Cow::Owned(Item {
+        content: url_image_data.clone(),
+        compressed: Cow::from(deflate_bytes(url_image_data.as_ref())),
+        content_type: HeaderValue::from_str("image/jpeg").unwrap(),
+        etag: make_hash("url-image.jpg", "").to_string(),
+        children: HashMap::new(),
+    });
+    root.to_mut().children.insert("url-image.jpg".to_string(), url_image_item);
 
     for x in &posts {
         let mut post_item: Cow<'static, Item> = Cow::Owned(Item {
@@ -217,7 +227,7 @@ fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: String) -> Shar
     }
 
     {
-        let rss_content = pre_render_rss(&posts, external_url_prefix);
+        let rss_content = pre_render_rss(&posts, &external_url_prefix);
         let rss = Cow::Owned(Item {
             content: rss_content.clone(),
             compressed: Cow::from(deflate_bytes(rss_content.as_ref())),
@@ -240,32 +250,28 @@ fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: String) -> Shar
     SharedState { root, not_found }
 }
 
-fn pre_render_head(title: &String) -> PreEscaped<String> {
+fn pre_render_head() -> PreEscaped<String> {
     let css1 = from_utf8(Asset::get("normalize.css").unwrap().data.as_ref()).unwrap().to_owned();
     let css2 = from_utf8(Asset::get("milligram.css").unwrap().data.as_ref()).unwrap().to_owned();
     let tree = html! {
-        head {
-            title { (title) }
-            link rel="shortcut icon" href=(ENCODED_FAVICON) type="image/svg+xml";
-            link rel="me" href="https://hachyderm.io/@benmeier_";
-            meta charset="utf-8";
-            meta name="author" content="Ben Meier";
-            meta name="description" content="Technical blog of Ben Meier";
-            meta name="keywords" content="golang, rust, distributed systems, programming, security";
-            meta name="viewport" content="width=device-width, initial-scale=1.0";
-            style nonce="123456789" {
-                (css1)
-                (css2)
-                "pre code { display: block; white-space: pre-wrap; } "
-                "ul { list-style: circle outside; } "
-                "ul li { margin-left: 1em; } "
-                ".index-nav-ul { margin: 0; list-style: circle outside; } "
-                "body { background-color: #fdfae9; }"
-                ".footnote-definition { margin-bottom: 2em; }"
-                ".footnote-definition p { display: inline; }"
-                "header.row { justify-content: space-between; }"
-                "header.row section.column { max-width: fit-content; }"
-            }
+        link rel="shortcut icon" href=(ENCODED_FAVICON) type="image/svg+xml";
+        link rel="me" href="https://hachyderm.io/@benmeier_";
+        meta charset="utf-8";
+        meta name="author" content="Ben Meier";
+        meta name="keywords" content="golang, rust, distributed systems, programming, security";
+        meta name="viewport" content="width=device-width, initial-scale=1.0";
+        style nonce="123456789" {
+            (css1)
+            (css2)
+            "pre code { display: block; white-space: pre-wrap; } "
+            "ul { list-style: circle outside; } "
+            "ul li { margin-left: 1em; } "
+            ".index-nav-ul { margin: 0; list-style: circle outside; } "
+            "body { background-color: #fdfae9; }"
+            ".footnote-definition { margin-bottom: 2em; }"
+            ".footnote-definition p { display: inline; }"
+            "header.row { justify-content: space-between; }"
+            "header.row section.column { max-width: fit-content; }"
         }
     };
     tree.clone()
@@ -301,11 +307,20 @@ fn pre_render_footer() -> PreEscaped<String> {
     }
 }
 
-fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, [u8]> {
+fn pre_render_index(posts: &Vec<Post>, external_url_prefix: &String) -> Cow<'static, [u8]> {
     let tree = html! {
         (DOCTYPE)
         html lang="en" {
-            (pre_render_head(&"Ben Meier".to_string()))
+            head {
+                title { "Ben's Blog" }
+                meta name="description" content="Technical blog of Ben Meier";
+                meta property="og:type" content="website";
+                meta property="og:title" content="Ben's Blog";
+                meta property="og:description" content="Technical blog of Ben Meier";
+                meta property="og:url" content={ (external_url_prefix) "/" };
+                meta property="og:image" content={ (external_url_prefix) "/url-image.jpg" };
+                (pre_render_head())
+            }
             body {
                 div.container {
                     header.row {
@@ -377,7 +392,7 @@ fn pre_render_index(posts: &Vec<Post>) -> Cow<'static, [u8]> {
     Cow::from(tree.into_string().as_bytes().to_owned()).to_owned()
 }
 
-fn pre_render_rss(posts: &Vec<Post>, external_url_prefix: String) -> Cow<'static, [u8]> {
+fn pre_render_rss(posts: &Vec<Post>, external_url_prefix: &String) -> Cow<'static, [u8]> {
     let tree = html! {
         (PreEscaped("<?xml version=\"1.0\" encoding=\"UTF-8\" ?>"))
         rss version="2.0" {
@@ -405,11 +420,24 @@ fn pre_render_post(
     title: &String,
     time: &PrimitiveDateTime,
     content: &PreEscaped<String>,
+    external_url_prefix: &String,
+    path: &String,
 ) -> Cow<'static, [u8]> {
     let tree = html! {
         (DOCTYPE)
         html lang="en" {
-            (pre_render_head(title))
+            head {
+                title { (title) }
+                meta name="description" content=(title);
+                meta property="og:type" content="article";
+                meta property="og:title" content=(title);
+                meta property="og:description" content={ (time.format(&POST_DATE_FORMAT).unwrap().to_string()) " - " (title) };
+                meta property="og:url" content={ (external_url_prefix) "/" (path) "/" };
+                meta property="og:image" content={ (external_url_prefix) "/url-image.jpg" };
+                meta property="article:author" content="Ben Meier";
+                meta property="article:published_time" content=(time.format(&RFC3339_DATE_FORMAT).unwrap().to_string());
+                (pre_render_head())
+            }
             body {
                 div.container {
                     header.row {
@@ -446,7 +474,10 @@ fn pre_render_not_found() -> Cow<'static, [u8]> {
     let tree = html! {
         (DOCTYPE)
         html lang="en" {
-            (pre_render_head(&"Not found".to_string()))
+            head {
+                title { "404 - Not Found" }
+                (pre_render_head())
+            }
             body {
                 div.container {
                     header.row {
@@ -653,7 +684,7 @@ async fn metric_layer<B>(request: http::Request<B>, next: middleware::Next<B>) -
 }
 
 fn setup_router(external_url_prefix: String) -> Router {
-    let state = Arc::new(build_shared_state(collect_posts(), external_url_prefix));
+    let state = Arc::new(build_shared_state(collect_posts(&external_url_prefix), &external_url_prefix));
     Router::new()
         .route("/", get(view_root_item))
         .route("/livez", get(healthcheck))
