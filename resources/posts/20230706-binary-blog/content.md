@@ -1,5 +1,7 @@
 <meta x-title="A binary blog"/>
 
+**Edit 2023-09-23:** _The first version of this blog described using GCP as a global application load balancer. This ended up being too expensive for more liking and I went back to Cloudflare - and updated this post to describe that layout._
+
 I've been interested in learning Rust (the programming language) for some time. As someone that enjoys reasoning and building distributed systems and looking at formal verification, the memory model of Rust intrigues me! So since I was looking at self-hosting my blog, I thought it may be a great excuse to tie together several things into one project:
 
 1. Learn and use Rust for a relatively complex project
@@ -47,26 +49,18 @@ generate-webp: $(WEBP_FILES)
 
 ## Hosting
 
-The blog is hosted in a production and "staging" configuration on the [Hensteeth Server](../20230705-home-lab-infrastructure) cluster. The staging configuration is mostly used for proofreading before the image is promoted to the primary hostname.
+The blog is hosted in a production and "staging" configuration on the [Hensteeth Server](../20230705-home-lab-infrastructure) cluster. The staging configuration is mostly used for proofreading before the container image is promoted to the primary hostname.
 
 It's best to understand this as a diagram:
 
-![diagram showing k8s deployment, port forwarding, and Google Cloud load balancer](blog-infra.drawio.png.webp)
+![A diagram showing k8s deployment, port forwarding, and Cloudflare integration](blog-infra.drawio.png.webp)
 
-The global load balancer is important to me as it gives the blog edge-style caching, with HTTP-to-HTTPS redirection without putting my home IP address right at the cliff face. This unfortunately incurs the main cost of the project: it relies on 1 or 2 static IP addresses set up for anycast to the GCP endpoints.
+I'm using Cloudflare as the global router and proxy in front of my home IP address (with a Let's Encrypt certificate on my end). Limiting the ingress on the firewall to just Cloudflare's proxy addresses helps to keep things secure here - and I can trust Cloudflare to keep the public HTTPS side of things tidy.
 
-Certificates on the LB are done with Google's certificate management and DNS challenges.
+I had previously used GCP for all of my DNS and the global application load balancer for this blog however this quickly became quite expensive due to mounting DNS and Networking costs (in the £40/month range). Shifting all DNS records and proxy'ing to Cloudflare has made this considerably cheaper.
 
-![traffic flow with caching](flow.png.webp)
-
-I've been using GCP here because that's where I've had my DNS zone hosted in the past, and the global load balancer was attractive. Unfortunately, I've been finding some of the GCP experience, especially around monitoring and metrics, quite poor so I'm probably going to look towards a different solution in the future. It won't be Cloudflare, and BunnyCDN lacked a good solution for allow-listing the incoming ip range between the CDN and my home router. Thankfully as everything is set up with Terraform it's relatively easy to move!
+Everything is set up with Terraform with any secrets (API keys) stored in a `1password` vault.
 
 ## Next steps
-
-- I've chosen to have no client-side monitoring or tracking, which is great but it means I need to spend some time building a dashboard or tool to pull data out of the Google monitoring stack so that I can figure out hits per blog post.
-
-- Evaluate costs and check if another CDN solution is needed, although I'll only be able to figure this out after a few months.
-
-- Continuous delivery. I'm currently deploying it manually with a `helm upgrade` call once the PR has merged into the main branch on Github and the CI pipeline has run, but that sucks! I'd like to get it at least automatically promoted to staging. This is complicated because Github Actions can't easily reach out to my K8s cluster. I may need to do something more custom here.
 
 - Write more content!
