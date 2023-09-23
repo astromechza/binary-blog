@@ -49,7 +49,7 @@ For example:
 One problem here is that this can cause a high degree of message churn and IO if the total delay is large. To optimise this, we can set up multiple delay queues with a factor (`N`) increase between them:
 
 - A 2-second delay queue (the delay of the smallest queue is the smallest accuracy resolution).
-- A 8-second delay queue.
+- An 8-second delay queue.
 - A 32-second delay queue.
 - A 128-second delay queue.
 - Etc. (I'm illustrating a `N=4` factor here).
@@ -58,7 +58,7 @@ This means a message will only be on each queue at most N-1 times: To build 255 
 
 Since queues are quite cheap in RabbitMQ, we can do this:
 
-![A diagram showing multiple chained delay queues](./multi-delay-queue.png)
+![A diagram showing multiple chained delay queues](multi-delay-queue.png)
 
 ## Making it reliable
 
