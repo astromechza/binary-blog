@@ -1,4 +1,4 @@
-FROM rust
+FROM rust:bullseye
 COPY ./ /build
 RUN cd /build &&\
     cargo test --verbose --release --offline &&\
