@@ -87,13 +87,9 @@ And finally, the approach I settled on. Since I'm using host-native persistent s
 This is much simpler: 
 
 1. Choose a target Persistent Volume
-2. Create a new CronJob template with a backup pod with the appropriate volume set up to consume the existing PersistentVolume
+2. Create a new CronJob template with the appropriate volume set up to consume the existing PersistentVolume in read-only mode
 3. Mount in a configmap with the Rclone config file containing Backblaze credentials
-4. The CronJob executes
-
-	```
-	rclone sync /volume remote:<bucket name> --fast-list --transfers=32 -v
-	```
+4. The pod within the cron job executes `rclone sync /volume remote:<bucket name> --fast-list --transfers=32 -v`
 
 Since CronJobs store success and failure information, this also gives me a handy backup history to show when last it took a successful backup.
 
@@ -117,6 +113,6 @@ I'm quite happy with this approach. It's very clean and easy to understand, desc
 
 Backblaze B2 is a well-understood and well-supported provider so I'm confident my backups aren't just going to be randomly lost.
 
-I'm also more free to experiment with more home lab ideas since I know that even if I do break something, I have all the Terraform, Helm charts, and Kubernetes manifests, to bring things up, along with the backups in Backblaze to import again.
+I'm also more free to experiment with more home lab ideas since I know that even if I do break something, I have all the Terraform, Helm charts, and Kubernetes manifests, to bring things up, along with the backups in Backblaze to import again. $6 a month well spent I'd say.
 
 Thanks for reading!
