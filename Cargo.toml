@@ -28,4 +28,4 @@ prometheus = "0.13.3"
 protobuf = "2.28.0"
 
 [dev-dependencies]
-test-case = "3.0.0"
+test-case = "3.2.1"
