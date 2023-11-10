@@ -72,7 +72,7 @@ This would allow for:
 
 This option was great because in theory it was very Kubernetes native, and like the previous approach it ensured that I couldn't damage the source data during the backup process.
 
-Unfortunately, the [https://github.com/topolvm/topolvm](Topolvm) CSI driver I use doesn't officially support snapshotting. And the snapshotting it does provide is only for "thin pool" LVM volumes! Which I'm not using here!
+Unfortunately, the [TopolVM](https://github.com/topolvm/topolvm) CSI driver I use doesn't officially support snapshotting. And the snapshotting it does provide is only for "thin pool" LVM volumes! Which I'm not using here!
 
 I decided that migrating to thin pool volumes and then relying on unsupported and undocumented behaviour for backups was probably not wise.
 
