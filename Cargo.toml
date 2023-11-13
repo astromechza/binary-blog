@@ -13,7 +13,7 @@ lazy_static = "1.4"
 convert_case = "0.6.0"
 h2 = "0.3.21"
 hyper = "0.14.27"
-maud = { version = "0.24", features = ["axum"] }
+maud = { version = "0.25", features = ["axum"] }
 axum = { version = "0.6.20", features = ["http2"] }
 time = { version = "0.3.20", features = ["macros", "formatting", "parsing"] }
 tokio = { version = "1", features = ["full"] }
