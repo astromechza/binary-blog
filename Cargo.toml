@@ -11,7 +11,7 @@ deflate = "1.0.0"
 pulldown-cmark = "0.10"
 lazy_static = "1.4"
 convert_case = "0.6.0"
-h2 = "0.3.21"
+h2 = "0.3.24"
 hyper = "0.14.27"
 maud = { version = "0.24", features = ["axum"] }
 axum = { version = "0.6.20", features = ["http2"] }
