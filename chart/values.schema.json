@@ -46,6 +46,9 @@
                 "hostname",
                 "extraHostnames"
             ]
+        },
+        "honeycombSecretName": {
+            "type": "string"
         }
     },
     "additionalProperties": false,

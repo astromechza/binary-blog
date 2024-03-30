@@ -15,8 +15,10 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use clap::{crate_version, Parser};
 use deflate::deflate_bytes;
+use hyper::Request;
 use lazy_static::lazy_static;
 use maud::{DOCTYPE, html, Markup, PreEscaped};
+use opentelemetry_otlp::WithExportConfig;
 use prometheus::{self, Encoder, Histogram, HistogramOpts, IntCounter, TextEncoder};
 use prometheus::proto::{Gauge, Metric, MetricFamily, MetricType};
 use prometheus::register_histogram;
@@ -26,8 +28,10 @@ use rust_embed::RustEmbed;
 use time::{Date, OffsetDateTime, PrimitiveDateTime};
 use time::format_description::FormatItem;
 use time::macros::{format_description, time};
-use tower_http::trace::TraceLayer;
+use tower_http::trace::{MakeSpan, TraceLayer};
+use tracing::Span;
 use tracing_subscriber;
+use tracing_subscriber::layer::SubscriberExt;
 
 #[derive(RustEmbed)]
 #[folder = "resources/"]
@@ -74,9 +78,13 @@ const PLAIN_CONTENT_TYPE: &str = "text/plain; charset=utf-8";
 const CRATE_VERSION: &str = crate_version!();
 const CACHE_CONTROL: &str = "max-age=300";
 
-const POST_DATE_FORMAT: &[FormatItem] = format_description!("[day padding:none] [month repr:long] [year]");
-const RFC3339_DATE_FORMAT: &[FormatItem] = format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]Z");
-const RFC2822_DATE_FORMAT: &[FormatItem] = format_description!("[weekday repr:short], [day] [month repr:short] [year] [hour]:[minute]:[second] GMT");
+const POST_DATE_FORMAT: &[FormatItem] =
+    format_description!("[day padding:none] [month repr:long] [year]");
+const RFC3339_DATE_FORMAT: &[FormatItem] =
+    format_description!("[year]-[month]-[day]T[hour]:[minute]:[second]Z");
+const RFC2822_DATE_FORMAT: &[FormatItem] = format_description!(
+    "[weekday repr:short], [day] [month repr:short] [year] [hour]:[minute]:[second] GMT"
+);
 const FOOTER_DATE_FORMAT: &[FormatItem] = RFC3339_DATE_FORMAT;
 const ENCODED_FAVICON: &str = "data:image/svg+xml,%3Csvg version='1.0' xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' viewBox='0 0 64 64' enable-background='new 0 0 64 64' xml:space='preserve'%3E%3Cg%3E%3Cg%3E%3Cpolygon fill='%23F9EBB2' points='46,3.414 46,14 56.586,14 '/%3E%3Cpath fill='%23F9EBB2' d='M45,16c-0.553,0-1-0.447-1-1V2H8C6.896,2,6,2.896,6,4v56c0,1.104,0.896,2,2,2h48c1.104,0,2-0.896,2-2V16 H45z'/%3E%3C/g%3E%3Cpath fill='%23394240' d='M14,26c0,0.553,0.447,1,1,1h34c0.553,0,1-0.447,1-1s-0.447-1-1-1H15C14.447,25,14,25.447,14,26z'/%3E%3Cpath fill='%23394240' d='M49,37H15c-0.553,0-1,0.447-1,1s0.447,1,1,1h34c0.553,0,1-0.447,1-1S49.553,37,49,37z'/%3E%3Cpath fill='%23394240' d='M49,43H15c-0.553,0-1,0.447-1,1s0.447,1,1,1h34c0.553,0,1-0.447,1-1S49.553,43,49,43z'/%3E%3Cpath fill='%23394240' d='M49,49H15c-0.553,0-1,0.447-1,1s0.447,1,1,1h34c0.553,0,1-0.447,1-1S49.553,49,49,49z'/%3E%3Cpath fill='%23394240' d='M49,31H15c-0.553,0-1,0.447-1,1s0.447,1,1,1h34c0.553,0,1-0.447,1-1S49.553,31,49,31z'/%3E%3Cpath fill='%23394240' d='M15,20h16c0.553,0,1-0.447,1-1s-0.447-1-1-1H15c-0.553,0-1,0.447-1,1S14.447,20,15,20z'/%3E%3Cpath fill='%23394240' d='M59.706,14.292L45.708,0.294C45.527,0.112,45.277,0,45,0H8C5.789,0,4,1.789,4,4v56c0,2.211,1.789,4,4,4h48 c2.211,0,4-1.789,4-4V15C60,14.723,59.888,14.473,59.706,14.292z M46,3.414L56.586,14H46V3.414z M58,60c0,1.104-0.896,2-2,2H8 c-1.104,0-2-0.896-2-2V4c0-1.104,0.896-2,2-2h36v13c0,0.553,0.447,1,1,1h13V60z'/%3E%3Cpolygon opacity='0.15' fill='%23231F20' points='46,3.414 56.586,14 46,14 '/%3E%3C/g%3E%3C/svg%3E";
 
@@ -86,14 +94,30 @@ lazy_static! {
         register_int_counter!("requests", "Number of http requests received").unwrap();
     static ref RESPONSE_BYTES: IntCounter =
         register_int_counter!("response_bytes", "Total number of bytes of responses sent").unwrap();
-    static ref RESPONSE_LATENCY_2XX: Histogram =
-        register_histogram!(HistogramOpts::new("response_latency_ms".to_string(), "Response latency in milliseconds".to_string()).const_label("status_family", "2xx")).unwrap();
-    static ref RESPONSE_LATENCY_3XX: Histogram =
-        register_histogram!(HistogramOpts::new("response_latency_ms".to_string(), "Response latency in milliseconds".to_string()).const_label("status_family", "3xx")).unwrap();
-    static ref RESPONSE_LATENCY_4XX: Histogram =
-        register_histogram!(HistogramOpts::new("response_latency_ms".to_string(), "Response latency in milliseconds".to_string()).const_label("status_family", "4xx")).unwrap();
-    static ref RESPONSE_LATENCY_5XX: Histogram =
-        register_histogram!(HistogramOpts::new("response_latency_ms".to_string(), "Response latency in milliseconds".to_string()).const_label("status_family", "5xx")).unwrap();
+    static ref RESPONSE_LATENCY_2XX: Histogram = register_histogram!(HistogramOpts::new(
+        "response_latency_ms".to_string(),
+        "Response latency in milliseconds".to_string()
+    )
+    .const_label("status_family", "2xx"))
+    .unwrap();
+    static ref RESPONSE_LATENCY_3XX: Histogram = register_histogram!(HistogramOpts::new(
+        "response_latency_ms".to_string(),
+        "Response latency in milliseconds".to_string()
+    )
+    .const_label("status_family", "3xx"))
+    .unwrap();
+    static ref RESPONSE_LATENCY_4XX: Histogram = register_histogram!(HistogramOpts::new(
+        "response_latency_ms".to_string(),
+        "Response latency in milliseconds".to_string()
+    )
+    .const_label("status_family", "4xx"))
+    .unwrap();
+    static ref RESPONSE_LATENCY_5XX: Histogram = register_histogram!(HistogramOpts::new(
+        "response_latency_ms".to_string(),
+        "Response latency in milliseconds".to_string()
+    )
+    .const_label("status_family", "5xx"))
+    .unwrap();
 }
 
 fn collect_posts(external_url_prefix: &String) -> Vec<Post> {
@@ -136,7 +160,13 @@ fn collect_posts(external_url_prefix: &String) -> Vec<Post> {
             pulldown_cmark::html::push_html(&mut html_output, parser);
             let tree: Markup = PreEscaped { 0: html_output };
 
-            let content = pre_render_post(&parsed_title, &parsed_date_time, &tree, &external_url_prefix, &path);
+            let content = pre_render_post(
+                &parsed_title,
+                &parsed_date_time,
+                &tree,
+                &external_url_prefix,
+                &path,
+            );
 
             let mut assets = HashMap::new();
 
@@ -190,7 +220,9 @@ fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: &String) -> Sha
         etag: make_hash("url-image.jpg", "").to_string(),
         children: HashMap::new(),
     });
-    root.to_mut().children.insert("url-image.jpg".to_string(), url_image_item);
+    root.to_mut()
+        .children
+        .insert("url-image.jpg".to_string(), url_image_item);
 
     for x in &posts {
         let mut post_item: Cow<'static, Item> = Cow::Owned(Item {
@@ -205,7 +237,13 @@ fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: &String) -> Sha
             let asset_item = Cow::Owned(Item {
                 content: y.1.clone(),
                 compressed: Cow::from(deflate_bytes(y.1.as_ref())),
-                content_type: HeaderValue::from_str(mime_guess::from_path(y.0.as_str()).first_or_text_plain().to_string().as_str()).unwrap(),
+                content_type: HeaderValue::from_str(
+                    mime_guess::from_path(y.0.as_str())
+                        .first_or_text_plain()
+                        .to_string()
+                        .as_str(),
+                )
+                    .unwrap(),
                 etag: make_hash(x.title.as_str(), y.0.as_str()).to_string(),
                 children: HashMap::new(),
             });
@@ -216,7 +254,11 @@ fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: &String) -> Sha
     }
 
     {
-        let robots_content = Cow::from("User-agent: *\nAllow: /\nDisallow: /livez\nDisallow: /readyz\nDisallow: /metricz\n".as_bytes().to_owned());
+        let robots_content = Cow::from(
+            "User-agent: *\nAllow: /\nDisallow: /livez\nDisallow: /readyz\nDisallow: /metricz\n"
+                .as_bytes()
+                .to_owned(),
+        );
         let robots = Cow::Owned(Item {
             content: robots_content.clone(),
             compressed: Cow::from(deflate_bytes(robots_content.as_ref())),
@@ -224,7 +266,9 @@ fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: &String) -> Sha
             etag: make_hash_of_bytes(robots_content.clone()).to_string(),
             children: HashMap::new(),
         });
-        root.to_mut().children.insert("robots.txt".to_string(), robots);
+        root.to_mut()
+            .children
+            .insert("robots.txt".to_string(), robots);
     }
 
     {
@@ -252,8 +296,12 @@ fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: &String) -> Sha
 }
 
 fn pre_render_head() -> PreEscaped<String> {
-    let css1 = from_utf8(Asset::get("normalize.css").unwrap().data.as_ref()).unwrap().to_owned();
-    let css2 = from_utf8(Asset::get("milligram.css").unwrap().data.as_ref()).unwrap().to_owned();
+    let css1 = from_utf8(Asset::get("normalize.css").unwrap().data.as_ref())
+        .unwrap()
+        .to_owned();
+    let css2 = from_utf8(Asset::get("milligram.css").unwrap().data.as_ref())
+        .unwrap()
+        .to_owned();
     let tree = html! {
         link rel="shortcut icon" href=(ENCODED_FAVICON) type="image/svg+xml";
         link rel="me" href="https://hachyderm.io/@benmeier_";
@@ -570,10 +618,7 @@ async fn not_found(state: State<Arc<SharedState>>, headers: HeaderMap) -> Respon
     gen_not_found(state, headers)
 }
 
-async fn view_root_item(
-    state: State<Arc<SharedState>>,
-    req_headers: HeaderMap,
-) -> Response {
+async fn view_root_item(state: State<Arc<SharedState>>, req_headers: HeaderMap) -> Response {
     view_nested_item(Path(("".to_string(), "".to_string())), state, req_headers).await
 }
 
@@ -607,10 +652,7 @@ async fn view_nested_item(
     }
 
     let mut headers = HeaderMap::new();
-    headers.insert(
-        http::header::CONTENT_TYPE,
-        x.content_type.clone(),
-    );
+    headers.insert(http::header::CONTENT_TYPE, x.content_type.clone());
     headers.insert(
         http::header::ETAG,
         HeaderValue::from_str(x.etag.as_str()).unwrap(),
@@ -619,9 +661,21 @@ async fn view_nested_item(
         http::header::CACHE_CONTROL,
         HeaderValue::from_str(CACHE_CONTROL).unwrap(),
     );
-    headers.insert(http::header::X_FRAME_OPTIONS, HeaderValue::from_str("DENY").unwrap());
-    headers.insert(http::header::CONTENT_SECURITY_POLICY, HeaderValue::from_str("default-src 'none'; style-src 'nonce-123456789'; img-src 'self' data: https:").unwrap());
-    headers.insert(http::header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_str("nosniff").unwrap());
+    headers.insert(
+        http::header::X_FRAME_OPTIONS,
+        HeaderValue::from_str("DENY").unwrap(),
+    );
+    headers.insert(
+        http::header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_str(
+            "default-src 'none'; style-src 'nonce-123456789'; img-src 'self' data: https:",
+        )
+            .unwrap(),
+    );
+    headers.insert(
+        http::header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_str("nosniff").unwrap(),
+    );
 
     if let Some(not_modified) = check_etag_and_return(x.etag.clone(), &req_headers, &headers) {
         return not_modified;
@@ -629,7 +683,10 @@ async fn view_nested_item(
 
     let ae_header = req_headers.get(http::header::ACCEPT_ENCODING);
     if ae_header.is_some() && ae_header.unwrap().to_str().unwrap().contains("deflate") {
-        headers.insert(http::header::CONTENT_ENCODING, HeaderValue::from_str("deflate").unwrap());
+        headers.insert(
+            http::header::CONTENT_ENCODING,
+            HeaderValue::from_str("deflate").unwrap(),
+        );
         return (StatusCode::OK, headers, x.compressed.clone()).into_response();
     }
 
@@ -665,7 +722,10 @@ async fn metricz() -> Response {
     metric_families.push(generate_uptime_metric());
     encoder.encode(&metric_families, &mut buffer).unwrap();
     let mut headers = HeaderMap::new();
-    headers.insert(http::header::CONTENT_TYPE, HeaderValue::from_str("text/plain").unwrap());
+    headers.insert(
+        http::header::CONTENT_TYPE,
+        HeaderValue::from_str("text/plain").unwrap(),
+    );
     (StatusCode::OK, headers, buffer.clone()).into_response()
 }
 
@@ -687,8 +747,119 @@ async fn metric_layer<B>(request: http::Request<B>, next: middleware::Next<B>) -
     response
 }
 
+#[derive(Default, Clone)]
+struct HttpTraceLayerHooks;
+
+impl<B> MakeSpan<B> for HttpTraceLayerHooks {
+    fn make_span(&mut self, req: &Request<B>) -> Span {
+        // see https://github.com/open-telemetry/semantic-conventions/blob/main/docs/http/http-spans.md
+        let span = tracing::info_span!(
+            // span name here will be ignored by open telemetry and replaced with otel.name
+            "request",
+            // the span name
+            otel.name = tracing::field::Empty,
+            otel.kind = "server",
+            otel.status_code = tracing::field::Empty,
+            // common attributes
+            http.response.status_code = tracing::field::Empty,
+            http.request.body.size = tracing::field::Empty,
+            http.response.body.size = tracing::field::Empty,
+            http.request.method = req.method().as_str(),
+            network.protocol.name = "http",
+            network.protocol.version = format!("{:?}", req.version()).strip_prefix("HTTP/"),
+            user_agent.original = tracing::field::Empty,
+            // http request and response headers
+            http.request.header.x_forwarded_for = tracing::field::Empty,
+            http.request.header.cf_ipcountry = tracing::field::Empty,
+            // http server
+            http.route = tracing::field::Empty,
+            server.address = tracing::field::Empty,
+            server.port = tracing::field::Empty,
+            url.path = req.uri().path(),
+            url.query = tracing::field::Empty,
+            url.scheme = tracing::field::Empty,
+            // set on the failure hook
+            "error.type" = tracing::field::Empty,
+            error = tracing::field::Empty,
+        );
+
+        req.uri().query().map(|v| span.record("url.query", v));
+        req.uri()
+            .scheme()
+            .map(|v| span.record("url.scheme", v.as_str()));
+        req.uri().host().map(|v| span.record("server.address", v));
+        req.uri().port_u16().map(|v| span.record("server.port", v));
+
+        req.headers()
+            .get(http::header::CONTENT_LENGTH)
+            .map(|v| v.to_str().map(|v| span.record("http.request.body.size", v)));
+        req.headers()
+            .get(http::header::USER_AGENT)
+            .map(|v| v.to_str().map(|v| span.record("user_agent.original", v)));
+        req.headers().get("X-Forwarded-For").map(|v| {
+            v.to_str()
+                .map(|v| span.record("http.request.header.x_forwarded_for", v))
+        });
+        req.headers().get("CF-IPCountry").map(|v| {
+            v.to_str()
+                .map(|v| span.record("http.request.header.cf_ipcountry", v))
+        });
+
+        if let Some(path) = req.extensions().get::<axum::extract::MatchedPath>() {
+            span.record("otel.name", format!("{} {}", req.method(), path.as_str()));
+            span.record("http.route", path.as_str());
+        } else {
+            span.record("otel.name", format!("{} -", req.method()));
+        };
+
+        span
+    }
+}
+
+impl<B> tower_http::trace::OnRequest<B> for HttpTraceLayerHooks {
+    fn on_request(&mut self, _: &Request<B>, _: &Span) {
+        tracing::event!(tracing::Level::DEBUG, "start processing request");
+    }
+}
+
+impl<B> tower_http::trace::OnResponse<B> for HttpTraceLayerHooks {
+    fn on_response(self, response: &Response<B>, _: std::time::Duration, span: &Span) {
+        if let Some(size) = response.headers().get(http::header::CONTENT_LENGTH) {
+            span.record("http.response.body.size", size.to_str().unwrap());
+        }
+        span.record("http.response.status_code", response.status().as_u16());
+
+        // Server errors are handled by the OnFailure hook
+        if !response.status().is_server_error() {
+            tracing::event!(tracing::Level::INFO, "finished processing request");
+        }
+    }
+}
+
+impl<FailureClass> tower_http::trace::OnFailure<FailureClass> for HttpTraceLayerHooks
+    where
+        FailureClass: std::fmt::Display,
+{
+    fn on_failure(&mut self, error: FailureClass, _: std::time::Duration, _: &Span) {
+        tracing::event!(
+            tracing::Level::ERROR,
+            error = error.to_string(),
+            "error.type" = "_OTHER",
+            "response failed"
+        );
+    }
+}
+
 fn setup_router(external_url_prefix: String) -> Router {
-    let state = Arc::new(build_shared_state(collect_posts(&external_url_prefix), &external_url_prefix));
+    let state = Arc::new(build_shared_state(
+        collect_posts(&external_url_prefix),
+        &external_url_prefix,
+    ));
+    let trace_layer = TraceLayer::new_for_http()
+        .make_span_with(HttpTraceLayerHooks::default())
+        .on_request(HttpTraceLayerHooks::default())
+        .on_response(HttpTraceLayerHooks::default())
+        .on_failure(HttpTraceLayerHooks::default());
     Router::new()
         .route("/", get(view_root_item))
         .route("/livez", get(healthcheck))
@@ -700,27 +871,61 @@ fn setup_router(external_url_prefix: String) -> Router {
         .fallback(not_found)
         .with_state(state)
         .layer(middleware::from_fn(metric_layer))
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(
-                    tower_http::trace::DefaultMakeSpan::new().level(tracing::Level::INFO),
-                )
-                .on_response(
-                    tower_http::trace::DefaultOnResponse::new().include_headers(true).level(tracing::Level::INFO),
-                ),
-        )
+        .layer(trace_layer)
 }
 
 #[tokio::main]
 async fn main() {
     let args = Cli::parse();
-    tracing_subscriber::fmt::init();
+
+    let honeycomb_key_path =
+        std::env::var("HONEYCOMB_KEY_PATH").unwrap_or_else(|_| "honeycomb.key".to_string());
+    match std::fs::read_to_string(honeycomb_key_path) {
+        Ok(api_key) => {
+            let tracer = opentelemetry_otlp::new_pipeline()
+                .tracing()
+                .with_exporter(
+                    opentelemetry_otlp::new_exporter()
+                        .http()
+                        .with_endpoint("https://api.honeycomb.io")
+                        .with_http_client(reqwest::Client::default())
+                        .with_headers(HashMap::from([(
+                            "x-honeycomb-team".into(),
+                            api_key.trim().to_string(),
+                        )]))
+                        .with_timeout(std::time::Duration::from_secs(5)),
+                ) // Replace with runtime::Tokio if using async main
+                .with_trace_config(opentelemetry_sdk::trace::config().with_resource(
+                    opentelemetry_sdk::Resource::new(vec![opentelemetry::KeyValue::new(
+                        "service.name",
+                        "binary-blog",
+                    )]),
+                ))
+                .install_batch(opentelemetry_sdk::runtime::Tokio)
+                .unwrap();
+
+            let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+            let subscriber = tracing_subscriber::registry::Registry::default()
+                .with(tracing_subscriber::filter::LevelFilter::INFO) // filter out low-level debug tracing (eg tokio executor)
+                .with(tracing_subscriber::fmt::Layer::default()) // log to stdout
+                .with(telemetry_layer); // publish to honeycomb backend
+            tracing::subscriber::set_global_default(subscriber)
+                .expect("failed to set tracing subscriber");
+            tracing::info!("set up honeycomb tracing");
+        }
+        Err(e) => {
+            tracing_subscriber::fmt::init();
+            tracing::info!("couldn't read honeycomb key file: {}", e.to_string());
+        }
+    }
+
     let addr = SocketAddr::from((
         args.bind_address.unwrap_or([0, 0, 0, 0, 0, 0, 0, 0].into()),
         args.bind_port.unwrap_or(8080),
     ));
 
-    let app = setup_router(args.external_url_prefix.unwrap_or("".to_string())).into_make_service();
+    let app = setup_router(args.external_url_prefix.clone().unwrap_or("".to_string()))
+        .into_make_service();
     let svr = axum::Server::bind(&addr).serve(app);
 
     tracing::info!("server is listening on http://{}...", svr.local_addr());
@@ -772,7 +977,16 @@ mod tests {
     async fn test_index_gzipped() {
         let app = setup_router("http://example".to_string());
         let resp = app
-            .oneshot(Request::builder().uri("/").header(ACCEPT_ENCODING, HeaderValue::from_str("deflate,gzip").unwrap()).body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/")
+                    .header(
+                        ACCEPT_ENCODING,
+                        HeaderValue::from_str("deflate,gzip").unwrap(),
+                    )
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
 
@@ -784,7 +998,12 @@ mod tests {
     async fn test_livez() {
         let app = setup_router("http://example".to_string());
         let resp = app
-            .oneshot(Request::builder().uri("/livez").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/livez")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NO_CONTENT);
@@ -796,7 +1015,12 @@ mod tests {
     async fn test_readyz() {
         let app = setup_router("http://example".to_string());
         let resp = app
-            .oneshot(Request::builder().uri("/readyz").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/readyz")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NO_CONTENT);
@@ -808,12 +1032,20 @@ mod tests {
     async fn test_robots() {
         let app = setup_router("http://example".to_string());
         let resp = app
-            .oneshot(Request::builder().uri("/robots.txt").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/robots.txt")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(resp.headers().get(CONTENT_LENGTH).unwrap(), "77");
-        assert_eq!(resp.headers().get(CONTENT_TYPE).unwrap(), "text/plain; charset=utf-8");
+        assert_eq!(
+            resp.headers().get(CONTENT_TYPE).unwrap(),
+            "text/plain; charset=utf-8"
+        );
         assert!(resp.headers().get(ETAG).is_some());
         assert_eq!(resp.headers().get(CACHE_CONTROL).unwrap(), "max-age=300");
     }
@@ -822,7 +1054,12 @@ mod tests {
     async fn test_metrics() {
         let app = setup_router("http://example".to_string());
         let resp = app
-            .oneshot(Request::builder().uri("/metricz").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/metricz")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
@@ -833,7 +1070,12 @@ mod tests {
     async fn test_rss() {
         let app = setup_router("http://example".to_string());
         let resp = app
-            .oneshot(Request::builder().uri("/rss.xml").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/rss.xml")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
