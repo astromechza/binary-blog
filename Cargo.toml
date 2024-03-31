@@ -25,9 +25,9 @@ rust-embed = "6.6"
 regex = "1.7"
 mime_guess = "2.0"
 tracing-opentelemetry = "0.23"
-opentelemetry-otlp = { version = "0.15" , features = ["http-proto", "reqwest-client"] }
-opentelemetry = { version = "0.22" }
-opentelemetry_sdk = { version = "0.22" , features = ["rt-tokio", "rt-tokio-current-thread"]}
+opentelemetry-otlp = { version = "0.15" , default-features = false, features = ["trace", "http-proto", "reqwest-client"] }
+opentelemetry = { version = "0.22" , default-features = false, features = ["trace"]}
+opentelemetry_sdk = { version = "0.22" , default-features = false, features = ["trace", "rt-tokio"]}
 reqwest = "0.11"
 
 [dev-dependencies]
