@@ -11,6 +11,8 @@ So two things have popped up that I've been meaning to look at:
 1. **The [OpenTelemetry](https://opentelemetry.io/) project and SDKs** - high quality and portable observability APIs.
 2. **[Honeycomb](https://www.honeycomb.io)** - an observability product which _encourages_ high cardinality data feeds and moves away from the traditional view of metrics, logs, and traces as separate things and views them instead as generic inter-related "events".
 
+**NOTE** 📓: Many other folks use Javascript injections like Google Analytics and others to track browser stats from the client. But I've decided that I wan't to stay Javascript-free! So I rely on what Cloudflare can provide at a CDN/proxy level combined with observability from the binary itself on the server side.  
+
 ## The patient
 
 This blog has been running as a Rust binary with a basic Prometheus API and simple http metrics. You can read more about it in [A Binary Blog](/20230706-binary-blog/). I never really liked this as it took way too many steps to expose the data (Kubernetes service monitor, Prometheus, Thanos, Grafana, ...) and when I did get the data it didn't have the cardinality I wanted: I couldn't easily access raw headers, uris, user agents, etc.
