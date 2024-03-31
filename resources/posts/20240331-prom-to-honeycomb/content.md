@@ -1,27 +1,29 @@
 <meta x-title="Moving this blog from Prometheus to OpenTelemetry + Honeycomb"/>
 
-I've been putting a bunch of thought recently into my own idea of an "ideal" tech stack for starting a new project, SaaS, small business, or similar. One of the entries in the table has been "Observability" - and by that I don't mean specifically logs and metrics but rather, how would you answer questions about the operational health or debug issues effectively? And critically, while sticking to open protocols and standards. 
+I've been putting a bunch of thought recently into my own idea of an "ideal" tech stack for starting a new project, SaaS, small business, or similar. One of the entries in the table has been "Observability" - and by that, I don't mean specifically logs and metrics but rather, how would you answer questions about the operational health or debug issues effectively? And critically, while sticking to open protocols and standards. 
 
-Traditionally, we've always thought of this as metrics and logs. Then this expanded to cover traces, and distributed tracing (Google Dapper 2010 and Twitter Zipkin around 2012). Metrics and timeseries DBs evolved from Graphite, Statsd, towards InfluxDB and Prometheus. Logs moved towards the ELK (Elastic, Logstash, Kibana). Vendors popped up, like Fluentbit, Datadog, Newrelic, etc.
+Traditionally, we've always thought of this as metrics and logs. Then this expanded to cover traces, and distributed tracing (Google Dapper 2010 and Twitter Zipkin around 2012). Metrics and time-series DBs evolved from Graphite, Statsd, towards InfluxDB and Prometheus. Logs moved towards the ELK (Elastic, Logstash, Kibana). Vendors popped up, like Fluentbit, Datadog, Newrelic, etc.
 
-Now, the market for metrics, logs, and tracing is super-saturated with MANY vendor specific protocols and SDKs that lead to a high degree of lock-in, and complex cardinality and indexing rules where an incorrect configuration or label can lead to a very unfortunate wallet-related injury.
+Now the market for metrics, logs, and tracing is super-saturated with MANY vendor-specific protocols and SDKs that lead to a high degree of lock-in, and complex cardinality and indexing rules where an incorrect configuration or label can lead to a very unfortunate wallet-related injury.
 
 So two things have popped up that I've been meaning to look at:
 
-1. **The [OpenTelemetry](https://opentelemetry.io/) project and SDKs** - high quality and portable observability APIs.
+1. **The [OpenTelemetry](https://opentelemetry.io/) project and SDKs** - high quality and portable observability APIs and related projects.
 2. **[Honeycomb](https://www.honeycomb.io)** - an observability product which _encourages_ high cardinality data feeds and moves away from the traditional view of metrics, logs, and traces as separate things and views them instead as generic inter-related "events".
 
-**NOTE** 📓: Many other folks use Javascript injections like Google Analytics and others to track browser stats from the client. But I've decided that I wan't to stay Javascript-free! So I rely on what Cloudflare can provide at a CDN/proxy level combined with observability from the binary itself on the server side.  
+**NOTE 1** 📓: OpenTelemetry is admirable for its open protocols, conventions, and portability. But like many CNCF projects, it's equally cursed by complexity and "too many cooks". I'm intentionally just sticking to broad events, avoiding the sprawling "Collector", pushing them directly to Honeycomb, and staying far far away from the Kubernetes integrations. I don't intend to use Kubernetes in an "ideal" world.
 
-## The patient
+**NOTE 2** 📓: Many other folks use Javascript injections like Google Analytics and others to track browser stats from the client. But I've decided that I want to stay Javascript-free! So I rely on what Cloudflare can provide at a CDN/proxy level combined with observability from the binary itself on the server side.  
 
-This blog has been running as a Rust binary with a basic Prometheus API and simple http metrics. You can read more about it in [A Binary Blog](/20230706-binary-blog/). I never really liked this as it took way too many steps to expose the data (Kubernetes service monitor, Prometheus, Thanos, Grafana, ...) and when I did get the data it didn't have the cardinality I wanted: I couldn't easily access raw headers, uris, user agents, etc.
+## The patient ⚕️
 
-So it serves an ideal patient for an observability transplant: remove the prometheus endpoint, and export via OpenTelemetry to Honeycomb.
+This blog has been running as a Rust binary with a basic Prometheus API and simple HTTP metrics. You can read more about it in [A Binary Blog](/20230706-binary-blog/). I never really liked this as it took way too many steps to expose the data (Kubernetes service monitor, Prometheus, Thanos, Grafana, ...) and when I did get the data it didn't have the cardinality I wanted: I couldn't easily access raw headers, URIs, user agents, etc.
 
-## The changeset
+So it serves an ideal patient for an observability transplant: remove the Prometheus endpoint, and export via OpenTelemetry to Honeycomb.
 
-I initially tried using [libhoney-rust](https://crates.io/crates/libhoney-rust) and [tracing-honeycomb](https://crates.io/crates/tracing-honeycomb) - no opentelemetry, just a Rust SDK for Honeycomb. This worked pretty well and was a good way to get familiar with things but didn't accomplish the goal of using OpenTelemetry.
+## The changeset 🛠️
+
+I initially tried using [libhoney-rust](https://crates.io/crates/libhoney-rust) and [tracing-honeycomb](https://crates.io/crates/tracing-honeycomb) - no OpenTelemetry, just a Rust SDK for Honeycomb. This worked pretty well and was a good way to get familiar with things but didn't accomplish the goal of using OpenTelemetry.
 
 So I started again and moved on to the open telemetry libraries in `Cargo.toml`:
 
@@ -97,15 +99,16 @@ Culminating in some dashboards in Honeycomb:
 
 ![screenshot of a honeycomb dashboard](honeycomb-ui.png)
 
-## Wins
+## Wins 🏆
 
 - Some experience with OpenTelemetry tracing. Valuable for the future.
-- Using something other than Prometheus. It's nice to go back to a push-based observability platform with less relience on local scraping and cardinality issues.
+- Using something other than Prometheus. It's nice to go back to a push-based observability platform with less reliance on local scraping and cardinality issues.
 
-## Gotchas
+## Gotchas 🐍
 
-- A bit of a mess of dependencies. Multiple different opentelemetry libraries, each with different features, and incompatible versioning. Many of the libraries are still verison 0.X and so don't have the same semver behavior I'd usually want.
+- A bit of a mess of dependencies. Multiple different Opentelemetry libraries need to work together, each with different features, and incompatible versioning. Many of the libraries are still version 0.X and so don't have the same semantic versioning behavior I'd usually want.
 - Opentelemetry GRPC to Honeycomb was a struggle and was difficult to debug. HTTP was MUCH easier.
 
+👋
 
 
