@@ -8,26 +8,26 @@ use std::ops::Add;
 use std::str::from_utf8;
 use std::sync::Arc;
 
-use axum::{http, middleware, Router, routing::get};
 use axum::body::HttpBody;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
+use axum::{http, middleware, routing::get, Router};
 use clap::{crate_version, Parser};
 use deflate::deflate_bytes;
 use hyper::Request;
 use lazy_static::lazy_static;
-use maud::{DOCTYPE, html, Markup, PreEscaped};
+use maud::{html, Markup, PreEscaped, DOCTYPE};
 use opentelemetry_otlp::WithExportConfig;
-use prometheus::{self, Encoder, Histogram, HistogramOpts, IntCounter, TextEncoder};
 use prometheus::proto::{Gauge, Metric, MetricFamily, MetricType};
 use prometheus::register_histogram;
 use prometheus::register_int_counter;
+use prometheus::{self, Encoder, Histogram, HistogramOpts, IntCounter, TextEncoder};
 use protobuf::RepeatedField;
 use rust_embed::RustEmbed;
-use time::{Date, OffsetDateTime, PrimitiveDateTime};
 use time::format_description::FormatItem;
 use time::macros::{format_description, time};
+use time::{Date, OffsetDateTime, PrimitiveDateTime};
 use tower_http::trace::{MakeSpan, TraceLayer};
 use tracing::Span;
 use tracing_subscriber;
@@ -243,7 +243,7 @@ fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: &String) -> Sha
                         .to_string()
                         .as_str(),
                 )
-                    .unwrap(),
+                .unwrap(),
                 etag: make_hash(x.title.as_str(), y.0.as_str()).to_string(),
                 children: HashMap::new(),
             });
@@ -670,7 +670,11 @@ async fn view_nested_item(
         HeaderValue::from_str(
             "default-src 'none'; style-src 'nonce-123456789'; img-src 'self' data: https:",
         )
-            .unwrap(),
+        .unwrap(),
+    );
+    headers.insert(
+        http::header::REFERRER_POLICY,
+        HeaderValue::from_str("origin-when-cross-origin").unwrap(),
     );
     headers.insert(
         http::header::X_CONTENT_TYPE_OPTIONS,
@@ -771,6 +775,7 @@ impl<B> MakeSpan<B> for HttpTraceLayerHooks {
             // http request and response headers
             http.request.header.x_forwarded_for = tracing::field::Empty,
             http.request.header.cf_ipcountry = tracing::field::Empty,
+            http.request.header.referer = tracing::field::Empty,
             // http server
             http.route = tracing::field::Empty,
             server.address = tracing::field::Empty,
@@ -803,6 +808,10 @@ impl<B> MakeSpan<B> for HttpTraceLayerHooks {
         req.headers().get("CF-IPCountry").map(|v| {
             v.to_str()
                 .map(|v| span.record("http.request.header.cf_ipcountry", v))
+        });
+        req.headers().get("Referer").map(|v| {
+            v.to_str()
+                .map(|v| span.record("http.request.header.referer", v))
         });
 
         if let Some(path) = req.extensions().get::<axum::extract::MatchedPath>() {
@@ -837,8 +846,8 @@ impl<B> tower_http::trace::OnResponse<B> for HttpTraceLayerHooks {
 }
 
 impl<FailureClass> tower_http::trace::OnFailure<FailureClass> for HttpTraceLayerHooks
-    where
-        FailureClass: std::fmt::Display,
+where
+    FailureClass: std::fmt::Display,
 {
     fn on_failure(&mut self, error: FailureClass, _: std::time::Duration, _: &Span) {
         tracing::event!(
@@ -882,33 +891,39 @@ async fn main() {
         std::env::var("HONEYCOMB_KEY_PATH").unwrap_or_else(|_| "honeycomb.key".to_string());
     match std::fs::read_to_string(honeycomb_key_path) {
         Ok(api_key) => {
+            let otlp_endpoint = "https://api.honeycomb.io";
+            let otlp_headers =
+                HashMap::from([("x-honeycomb-team".into(), api_key.trim().to_string())]);
+            let otlp_service_name = args
+                .external_url_prefix
+                .clone()
+                .unwrap_or("unknown".to_string())
+                .replace("://", "-")
+                .replace(&['.', '/'], "-");
+
             let tracer = opentelemetry_otlp::new_pipeline()
                 .tracing()
                 .with_exporter(
                     opentelemetry_otlp::new_exporter()
                         .http()
-                        .with_endpoint("https://api.honeycomb.io")
+                        .with_endpoint(otlp_endpoint)
                         .with_http_client(reqwest::Client::default())
-                        .with_headers(HashMap::from([(
-                            "x-honeycomb-team".into(),
-                            api_key.trim().to_string(),
-                        )]))
+                        .with_headers(otlp_headers)
                         .with_timeout(std::time::Duration::from_secs(5)),
                 ) // Replace with runtime::Tokio if using async main
                 .with_trace_config(opentelemetry_sdk::trace::config().with_resource(
                     opentelemetry_sdk::Resource::new(vec![opentelemetry::KeyValue::new(
                         "service.name",
-                        "binary-blog",
+                        otlp_service_name,
                     )]),
                 ))
                 .install_batch(opentelemetry_sdk::runtime::Tokio)
                 .unwrap();
 
-            let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
             let subscriber = tracing_subscriber::registry::Registry::default()
                 .with(tracing_subscriber::filter::LevelFilter::INFO) // filter out low-level debug tracing (eg tokio executor)
                 .with(tracing_subscriber::fmt::Layer::default()) // log to stdout
-                .with(telemetry_layer); // publish to honeycomb backend
+                .with(tracing_opentelemetry::layer().with_tracer(tracer)); // traces can go to open telemetry
             tracing::subscriber::set_global_default(subscriber)
                 .expect("failed to set tracing subscriber");
             tracing::info!("set up honeycomb tracing");
@@ -937,14 +952,14 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use axum::body::Body;
-    use axum::http::{HeaderValue, Method, Request, StatusCode};
     use axum::http::header::{ACCEPT, CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE, ETAG};
+    use axum::http::{HeaderValue, Method, Request, StatusCode};
     use hyper::header::{ACCEPT_ENCODING, CONTENT_ENCODING};
     // for `oneshot` and `ready`
     use test_case::test_case;
     use tower::ServiceExt;
 
-    use crate::{Asset, CONTENT_FILE_NAME, setup_router};
+    use crate::{setup_router, Asset, CONTENT_FILE_NAME};
 
     #[tokio::test]
     async fn test_index() {
