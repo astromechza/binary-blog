@@ -8,3 +8,5 @@ ingress:
   tls: false
   className: ""
   annotations: {}
+
+honeycombSecretName: ""

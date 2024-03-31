@@ -29,6 +29,9 @@ spec:
           args:
             - "--external-url-prefix"
             - {{ if .Values.ingress.tls }}https://{{ else }}http://{{ end }}{{ .Values.ingress.hostname }}
+          env:
+            - name: HONEYCOMB_KEY_PATH
+              value: /honeycomb/key
           ports:
             - name: main
               containerPort: 8080
@@ -60,3 +63,15 @@ spec:
             limits:
               cpu: 1000m
               memory: 1G
+          {{ if .Values.honeycombSecretName }}
+          volumeMounts:
+            - name: honeycomb-secret
+              readOnly: true
+              mountPath: /honeycomb
+          {{ end }}
+      {{ if .Values.honeycombSecretName }}
+      volumes:
+        - name: honeycomb-secret
+          secret:
+            secretName: {{ .Values.honeycombSecretName | quote}}
+      {{ end }}

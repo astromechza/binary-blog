@@ -19,13 +19,18 @@ time = { version = "0.3.20", features = ["macros", "formatting", "parsing"] }
 tokio = { version = "1", features = ["full"] }
 tower = { version = "0.4.13", features = [] }
 tower-http = { version = "0.4.0", features = ["trace"] }
-tracing = "0.1.37"
-tracing-subscriber = "0.3.16"
+tracing = "0.1"
+tracing-subscriber = "0.3"
 rust-embed = "6.6.0"
 regex = "1"
 mime_guess = "2.0.4"
 prometheus = "0.13.3"
 protobuf = "2.28.0"
+tracing-opentelemetry = "0.23"
+opentelemetry-otlp = { version = "0.15" , features = ["http-proto", "reqwest-client"] }
+opentelemetry = { version = "0.22" }
+opentelemetry_sdk = { version = "0.22" , features = ["rt-tokio", "rt-tokio-current-thread"]}
+reqwest = "0.11"
 
 [dev-dependencies]
 test-case = "3.2.1"
