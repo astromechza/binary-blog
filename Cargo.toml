@@ -7,25 +7,23 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4.1", features = ["derive", "cargo"] }
-deflate = "1.0.0"
+deflate = "1.0"
 pulldown-cmark = "0.10"
 lazy_static = "1.4"
-convert_case = "0.6.0"
-h2 = "0.4.2"
-hyper = "0.14.27"
+convert_case = "0.6"
+h2 = "0.4"
+hyper = "0.14"
 maud = { version = "0.24", features = ["axum"] }
-axum = { version = "0.6.20", features = ["http2"] }
-time = { version = "0.3.20", features = ["macros", "formatting", "parsing"] }
+axum = { version = "0.6", features = ["http2"] }
+time = { version = "0.3", features = ["macros", "formatting", "parsing"] }
 tokio = { version = "1", features = ["full"] }
-tower = { version = "0.4.13", features = [] }
-tower-http = { version = "0.4.0", features = ["trace"] }
+tower = { version = "0.4", features = [] }
+tower-http = { version = "0.4", features = ["trace"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
-rust-embed = "6.6.0"
-regex = "1"
-mime_guess = "2.0.4"
-prometheus = "0.13.3"
-protobuf = "2.28.0"
+rust-embed = "6.6"
+regex = "1.7"
+mime_guess = "2.0"
 tracing-opentelemetry = "0.23"
 opentelemetry-otlp = { version = "0.15" , features = ["http-proto", "reqwest-client"] }
 opentelemetry = { version = "0.22" }
@@ -33,4 +31,4 @@ opentelemetry_sdk = { version = "0.22" , features = ["rt-tokio", "rt-tokio-curre
 reqwest = "0.11"
 
 [dev-dependencies]
-test-case = "3.2.1"
+test-case = "3.2"

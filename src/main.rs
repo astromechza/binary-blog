@@ -8,22 +8,16 @@ use std::ops::Add;
 use std::str::from_utf8;
 use std::sync::Arc;
 
-use axum::body::HttpBody;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::{http, middleware, routing::get, Router};
+use axum::{http, routing::get, Router};
 use clap::{crate_version, Parser};
 use deflate::deflate_bytes;
 use hyper::Request;
 use lazy_static::lazy_static;
 use maud::{html, Markup, PreEscaped, DOCTYPE};
 use opentelemetry_otlp::WithExportConfig;
-use prometheus::proto::{Gauge, Metric, MetricFamily, MetricType};
-use prometheus::register_histogram;
-use prometheus::register_int_counter;
-use prometheus::{self, Encoder, Histogram, HistogramOpts, IntCounter, TextEncoder};
-use protobuf::RepeatedField;
 use rust_embed::RustEmbed;
 use time::format_description::FormatItem;
 use time::macros::{format_description, time};
@@ -90,34 +84,6 @@ const ENCODED_FAVICON: &str = "data:image/svg+xml,%3Csvg version='1.0' xmlns='ht
 
 lazy_static! {
     static ref START_TIME: std::time::Instant = std::time::Instant::now();
-    static ref REQUESTS_RECEIVED: IntCounter =
-        register_int_counter!("requests", "Number of http requests received").unwrap();
-    static ref RESPONSE_BYTES: IntCounter =
-        register_int_counter!("response_bytes", "Total number of bytes of responses sent").unwrap();
-    static ref RESPONSE_LATENCY_2XX: Histogram = register_histogram!(HistogramOpts::new(
-        "response_latency_ms".to_string(),
-        "Response latency in milliseconds".to_string()
-    )
-    .const_label("status_family", "2xx"))
-    .unwrap();
-    static ref RESPONSE_LATENCY_3XX: Histogram = register_histogram!(HistogramOpts::new(
-        "response_latency_ms".to_string(),
-        "Response latency in milliseconds".to_string()
-    )
-    .const_label("status_family", "3xx"))
-    .unwrap();
-    static ref RESPONSE_LATENCY_4XX: Histogram = register_histogram!(HistogramOpts::new(
-        "response_latency_ms".to_string(),
-        "Response latency in milliseconds".to_string()
-    )
-    .const_label("status_family", "4xx"))
-    .unwrap();
-    static ref RESPONSE_LATENCY_5XX: Histogram = register_histogram!(HistogramOpts::new(
-        "response_latency_ms".to_string(),
-        "Response latency in milliseconds".to_string()
-    )
-    .const_label("status_family", "5xx"))
-    .unwrap();
 }
 
 fn collect_posts(external_url_prefix: &String) -> Vec<Post> {
@@ -744,56 +710,6 @@ async fn healthcheck() -> Response {
     (StatusCode::NO_CONTENT).into_response()
 }
 
-fn generate_uptime_metric() -> MetricFamily {
-    let mut metric = Metric::new();
-    let mut gauge = Gauge::new();
-    let elapsed = std::time::Instant::now().duration_since(*START_TIME);
-    gauge.set_value(elapsed.as_millis() as f64);
-    metric.set_gauge(gauge);
-    let mut rf = RepeatedField::new();
-    rf.push(metric);
-
-    let mut uptime = MetricFamily::new();
-    uptime.set_name(String::from("elapsed_millis"));
-    uptime.set_help(String::from("the last unix timestamp from the container"));
-    uptime.set_metric(rf);
-    uptime.set_field_type(MetricType::GAUGE);
-    return uptime;
-}
-
-async fn metricz() -> Response {
-    let mut buffer = Vec::new();
-    let encoder = TextEncoder::new();
-    let raw = prometheus::gather();
-    let mut metric_families = raw.to_owned();
-    metric_families.push(generate_uptime_metric());
-    encoder.encode(&metric_families, &mut buffer).unwrap();
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        http::header::CONTENT_TYPE,
-        HeaderValue::from_str("text/plain").unwrap(),
-    );
-    (StatusCode::OK, headers, buffer.clone()).into_response()
-}
-
-async fn metric_layer<B>(request: http::Request<B>, next: middleware::Next<B>) -> Response {
-    let start = std::time::Instant::now();
-    REQUESTS_RECEIVED.inc();
-    let response = next.run(request).await;
-    let elapsed = std::time::Instant::now().duration_since(start).as_millis() as f64;
-    if response.status().is_success() {
-        RESPONSE_LATENCY_2XX.observe(elapsed)
-    } else if response.status().is_redirection() {
-        RESPONSE_LATENCY_3XX.observe(elapsed)
-    } else if response.status().is_client_error() {
-        RESPONSE_LATENCY_4XX.observe(elapsed)
-    } else if response.status().is_server_error() {
-        RESPONSE_LATENCY_5XX.observe(elapsed)
-    }
-    RESPONSE_BYTES.inc_by(response.body().size_hint().lower());
-    response
-}
-
 #[derive(Default, Clone)]
 struct HttpTraceLayerHooks;
 
@@ -916,13 +832,11 @@ fn setup_router(external_url_prefix: String) -> Router {
         .route("/", get(view_root_item))
         .route("/livez", get(healthcheck))
         .route("/readyz", get(healthcheck))
-        .route("/metricz", get(metricz))
         .route("/:a", get(view_item))
         .route("/:a/", get(view_item))
         .route("/:a/:b", get(view_nested_item))
         .fallback(not_found)
         .with_state(state)
-        .layer(middleware::from_fn(metric_layer))
         .layer(trace_layer)
 }
 
@@ -1136,22 +1050,6 @@ mod tests {
         );
         assert!(resp.headers().get(ETAG).is_some());
         assert_eq!(resp.headers().get(CACHE_CONTROL).unwrap(), "max-age=300");
-    }
-
-    #[tokio::test]
-    async fn test_metrics() {
-        let app = setup_router("http://example".to_string());
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .uri("/metricz")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-        assert_eq!(resp.headers().get(CONTENT_TYPE).unwrap(), "text/plain");
     }
 
     #[tokio::test]
