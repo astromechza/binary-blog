@@ -95,6 +95,11 @@ Culminating in some dashboards in Honeycomb:
 
 ![screenshot of a honeycomb dashboard](honeycomb-ui.png)
 
+## Wins
+
+- Some experience with OpenTelemetry tracing. Valuable for the future.
+- Using something other than Prometheus. It's nice to go back to a push-based observability platform with less relience on local scraping and cardinality issues.
+
 ## Gotchas
 
 - A bit of a mess of dependencies. Multiple different opentelemetry libraries, each with different features, and incompatible versioning. Many of the libraries are still verison 0.X and so don't have the same semver behavior I'd usually want.
