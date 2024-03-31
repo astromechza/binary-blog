@@ -8,22 +8,16 @@ use std::ops::Add;
 use std::str::from_utf8;
 use std::sync::Arc;
 
-use axum::body::HttpBody;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::{http, middleware, routing::get, Router};
+use axum::{http, routing::get, Router};
 use clap::{crate_version, Parser};
 use deflate::deflate_bytes;
 use hyper::Request;
 use lazy_static::lazy_static;
 use maud::{html, Markup, PreEscaped, DOCTYPE};
 use opentelemetry_otlp::WithExportConfig;
-use prometheus::proto::{Gauge, Metric, MetricFamily, MetricType};
-use prometheus::register_histogram;
-use prometheus::register_int_counter;
-use prometheus::{self, Encoder, Histogram, HistogramOpts, IntCounter, TextEncoder};
-use protobuf::RepeatedField;
 use rust_embed::RustEmbed;
 use time::format_description::FormatItem;
 use time::macros::{format_description, time};
@@ -90,34 +84,6 @@ const ENCODED_FAVICON: &str = "data:image/svg+xml,%3Csvg version='1.0' xmlns='ht
 
 lazy_static! {
     static ref START_TIME: std::time::Instant = std::time::Instant::now();
-    static ref REQUESTS_RECEIVED: IntCounter =
-        register_int_counter!("requests", "Number of http requests received").unwrap();
-    static ref RESPONSE_BYTES: IntCounter =
-        register_int_counter!("response_bytes", "Total number of bytes of responses sent").unwrap();
-    static ref RESPONSE_LATENCY_2XX: Histogram = register_histogram!(HistogramOpts::new(
-        "response_latency_ms".to_string(),
-        "Response latency in milliseconds".to_string()
-    )
-    .const_label("status_family", "2xx"))
-    .unwrap();
-    static ref RESPONSE_LATENCY_3XX: Histogram = register_histogram!(HistogramOpts::new(
-        "response_latency_ms".to_string(),
-        "Response latency in milliseconds".to_string()
-    )
-    .const_label("status_family", "3xx"))
-    .unwrap();
-    static ref RESPONSE_LATENCY_4XX: Histogram = register_histogram!(HistogramOpts::new(
-        "response_latency_ms".to_string(),
-        "Response latency in milliseconds".to_string()
-    )
-    .const_label("status_family", "4xx"))
-    .unwrap();
-    static ref RESPONSE_LATENCY_5XX: Histogram = register_histogram!(HistogramOpts::new(
-        "response_latency_ms".to_string(),
-        "Response latency in milliseconds".to_string()
-    )
-    .const_label("status_family", "5xx"))
-    .unwrap();
 }
 
 fn collect_posts(external_url_prefix: &String) -> Vec<Post> {
@@ -281,6 +247,15 @@ fn build_shared_state(mut posts: Vec<Post>, external_url_prefix: &String) -> Sha
             children: HashMap::new(),
         });
         root.to_mut().children.insert("rss.xml".to_string(), rss);
+
+        let feed = Cow::Owned(Item {
+            content: rss_content.clone(),
+            compressed: Cow::from(deflate_bytes(rss_content.as_ref())),
+            content_type: HeaderValue::from_str("text/xml").unwrap(),
+            etag: make_hash_of_bytes(rss_content.clone()).to_string(),
+            children: HashMap::new(),
+        });
+        root.to_mut().children.insert("feed.xml".to_string(), feed);
     }
 
     let not_found_content = pre_render_not_found();
@@ -305,6 +280,7 @@ fn pre_render_head() -> PreEscaped<String> {
     let tree = html! {
         link rel="shortcut icon" href=(ENCODED_FAVICON) type="image/svg+xml";
         link rel="me" href="https://hachyderm.io/@benmeier_";
+        link rel="alternate" href="/feed.xml" type="application/rss+xml" title="RSS feed";
         meta charset="utf-8";
         meta name="author" content="Ben Meier";
         meta name="keywords" content="golang, rust, distributed systems, programming, security";
@@ -386,8 +362,8 @@ fn pre_render_index(posts: &Vec<Post>, external_url_prefix: &String) -> Cow<'sta
                                 "astromechza"
                             }
                             " | rss: "
-                            a href="/rss.xml" target="_blank" {
-                                "rss.xml"
+                            a href="/feed.xml" target="_blank" {
+                                "feed.xml"
                             }
                             " | "
                             a href="/" {
@@ -618,22 +594,34 @@ async fn not_found(state: State<Arc<SharedState>>, headers: HeaderMap) -> Respon
     gen_not_found(state, headers)
 }
 
-async fn view_root_item(state: State<Arc<SharedState>>, req_headers: HeaderMap) -> Response {
-    view_nested_item(Path(("".to_string(), "".to_string())), state, req_headers).await
+async fn view_root_item(
+    state: State<Arc<SharedState>>,
+    req_headers: HeaderMap,
+    req: Request<axum::body::Body>,
+) -> Response {
+    view_nested_item(
+        Path(("".to_string(), "".to_string())),
+        state,
+        req_headers,
+        req,
+    )
+    .await
 }
 
 async fn view_item(
     Path(key): Path<String>,
     state: State<Arc<SharedState>>,
     req_headers: HeaderMap,
+    req: Request<axum::body::Body>,
 ) -> Response {
-    view_nested_item(Path((key, "".to_string())), state, req_headers).await
+    view_nested_item(Path((key, "".to_string())), state, req_headers, req).await
 }
 
 async fn view_nested_item(
     Path(key): Path<(String, String)>,
     state: State<Arc<SharedState>>,
     req_headers: HeaderMap,
+    req: Request<axum::body::Body>,
 ) -> Response {
     let mut x = state.root.clone();
     if !key.0.is_empty() {
@@ -645,6 +633,27 @@ async fn view_nested_item(
                 } else {
                     return gen_not_found(state, req_headers);
                 }
+            }
+
+            // if we are loading a root item that doesn't end in slash and is html, lets redirect to the slash path.
+            if !req.uri().path().ends_with('/')
+                && x.content_type
+                    .to_str()
+                    .map(|s| s.eq(HTML_CONTENT_TYPE))
+                    .unwrap_or_default()
+            {
+                let mut headers = HeaderMap::new();
+                let mut newpath = req.uri().path().to_owned();
+                newpath.push('/');
+                headers.insert(
+                    http::header::LOCATION,
+                    HeaderValue::from_str(newpath.as_str()).unwrap(),
+                );
+                headers.insert(
+                    http::header::CACHE_CONTROL,
+                    HeaderValue::from_str(CACHE_CONTROL).unwrap(),
+                );
+                return (StatusCode::TEMPORARY_REDIRECT, headers.clone()).into_response();
             }
         } else {
             return gen_not_found(state, req_headers);
@@ -699,56 +708,6 @@ async fn view_nested_item(
 
 async fn healthcheck() -> Response {
     (StatusCode::NO_CONTENT).into_response()
-}
-
-fn generate_uptime_metric() -> MetricFamily {
-    let mut metric = Metric::new();
-    let mut gauge = Gauge::new();
-    let elapsed = std::time::Instant::now().duration_since(*START_TIME);
-    gauge.set_value(elapsed.as_millis() as f64);
-    metric.set_gauge(gauge);
-    let mut rf = RepeatedField::new();
-    rf.push(metric);
-
-    let mut uptime = MetricFamily::new();
-    uptime.set_name(String::from("elapsed_millis"));
-    uptime.set_help(String::from("the last unix timestamp from the container"));
-    uptime.set_metric(rf);
-    uptime.set_field_type(MetricType::GAUGE);
-    return uptime;
-}
-
-async fn metricz() -> Response {
-    let mut buffer = Vec::new();
-    let encoder = TextEncoder::new();
-    let raw = prometheus::gather();
-    let mut metric_families = raw.to_owned();
-    metric_families.push(generate_uptime_metric());
-    encoder.encode(&metric_families, &mut buffer).unwrap();
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        http::header::CONTENT_TYPE,
-        HeaderValue::from_str("text/plain").unwrap(),
-    );
-    (StatusCode::OK, headers, buffer.clone()).into_response()
-}
-
-async fn metric_layer<B>(request: http::Request<B>, next: middleware::Next<B>) -> Response {
-    let start = std::time::Instant::now();
-    REQUESTS_RECEIVED.inc();
-    let response = next.run(request).await;
-    let elapsed = std::time::Instant::now().duration_since(start).as_millis() as f64;
-    if response.status().is_success() {
-        RESPONSE_LATENCY_2XX.observe(elapsed)
-    } else if response.status().is_redirection() {
-        RESPONSE_LATENCY_3XX.observe(elapsed)
-    } else if response.status().is_client_error() {
-        RESPONSE_LATENCY_4XX.observe(elapsed)
-    } else if response.status().is_server_error() {
-        RESPONSE_LATENCY_5XX.observe(elapsed)
-    }
-    RESPONSE_BYTES.inc_by(response.body().size_hint().lower());
-    response
 }
 
 #[derive(Default, Clone)]
@@ -873,13 +832,11 @@ fn setup_router(external_url_prefix: String) -> Router {
         .route("/", get(view_root_item))
         .route("/livez", get(healthcheck))
         .route("/readyz", get(healthcheck))
-        .route("/metricz", get(metricz))
         .route("/:a", get(view_item))
         .route("/:a/", get(view_item))
         .route("/:a/:b", get(view_nested_item))
         .fallback(not_found)
         .with_state(state)
-        .layer(middleware::from_fn(metric_layer))
         .layer(trace_layer)
 }
 
@@ -954,7 +911,7 @@ mod tests {
     use axum::body::Body;
     use axum::http::header::{ACCEPT, CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE, ETAG};
     use axum::http::{HeaderValue, Method, Request, StatusCode};
-    use hyper::header::{ACCEPT_ENCODING, CONTENT_ENCODING};
+    use hyper::header::{ACCEPT_ENCODING, CONTENT_ENCODING, LOCATION};
     // for `oneshot` and `ready`
     use test_case::test_case;
     use tower::ServiceExt;
@@ -985,6 +942,36 @@ mod tests {
         assert!(length > 1);
         assert!(resp.headers().get(ETAG).is_some());
         assert!(resp.headers().get(CONTENT_ENCODING).is_none());
+        assert_eq!(resp.headers().get(CACHE_CONTROL).unwrap(), "max-age=300");
+    }
+
+    #[tokio::test]
+    async fn test_redirect_slash() {
+        let app = setup_router("http://example".to_string());
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/20230706-binary-blog")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::TEMPORARY_REDIRECT);
+        assert_eq!(
+            resp.headers().get(LOCATION).unwrap(),
+            "/20230706-binary-blog/"
+        );
+        let length: u32 = resp
+            .headers()
+            .get(CONTENT_LENGTH)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(length, 0);
         assert_eq!(resp.headers().get(CACHE_CONTROL).unwrap(), "max-age=300");
     }
 
@@ -1066,28 +1053,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_metrics() {
-        let app = setup_router("http://example".to_string());
-        let resp = app
-            .oneshot(
-                Request::builder()
-                    .uri("/metricz")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-        assert_eq!(resp.headers().get(CONTENT_TYPE).unwrap(), "text/plain");
-    }
-
-    #[tokio::test]
     async fn test_rss() {
         let app = setup_router("http://example".to_string());
         let resp = app
             .oneshot(
                 Request::builder()
                     .uri("/rss.xml")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.headers().get(CONTENT_TYPE).unwrap(), "text/xml");
+        assert!(resp.headers().get(ETAG).is_some());
+        assert_eq!(resp.headers().get(CACHE_CONTROL).unwrap(), "max-age=300");
+    }
+
+    #[tokio::test]
+    async fn test_feed() {
+        let app = setup_router("http://example".to_string());
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/feed.xml")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -1205,15 +1194,7 @@ mod tests {
             let links: Vec<&str> = link_re
                 .find_iter(body_str.as_ref())
                 .filter(|m| !m.as_str().contains("://"))
-                .map(|m| {
-                    m.as_str()
-                        .split("\"")
-                        .skip(1)
-                        .take(1)
-                        .last()
-                        .unwrap()
-                        .clone()
-                })
+                .map(|m| m.as_str().split("\"").skip(1).take(1).last().unwrap())
                 .collect();
 
             for y in links {
