@@ -10,3 +10,5 @@ ingress:
   annotations:
     a: b
     c: d
+
+honeycombSecretName: my-honeycomb-api-key
