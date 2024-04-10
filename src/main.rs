@@ -17,7 +17,12 @@ use deflate::deflate_bytes;
 use hyper::Request;
 use lazy_static::lazy_static;
 use maud::{html, Markup, PreEscaped, DOCTYPE};
+use opentelemetry::trace::{
+    Link, SamplingDecision, SamplingResult, SpanKind, TraceContextExt, TraceId, TraceState,
+};
+use opentelemetry::{Context, KeyValue};
 use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::trace::ShouldSample;
 use rust_embed::RustEmbed;
 use time::format_description::FormatItem;
 use time::macros::{format_description, time};
@@ -840,6 +845,41 @@ fn setup_router(external_url_prefix: String) -> Router {
         .layer(trace_layer)
 }
 
+#[derive(Debug, Clone)]
+struct CustomSampler {}
+
+impl ShouldSample for CustomSampler {
+    fn should_sample(
+        &self,
+        parent_context: Option<&Context>,
+        _trace_id: TraceId,
+        _name: &str,
+        _span_kind: &SpanKind,
+        attributes: &[KeyValue],
+        _links: &[Link],
+    ) -> SamplingResult {
+        let mut decision = SamplingDecision::RecordAndSample;
+        for a in attributes {
+            if a.key.as_str().eq("http.route")
+                && (a.value.as_str().eq("/livez") || a.value.as_str().eq("/readyz"))
+            {
+                decision = SamplingDecision::Drop;
+                break;
+            }
+        }
+        SamplingResult {
+            decision,
+            // No extra attributes ever set by the SDK samplers.
+            attributes: Vec::new(),
+            // all sampler in SDK will not modify trace state.
+            trace_state: match parent_context {
+                Some(ctx) => ctx.span().span_context().trace_state().clone(),
+                None => TraceState::default(),
+            },
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let args = Cli::parse();
@@ -868,12 +908,13 @@ async fn main() {
                         .with_headers(otlp_headers)
                         .with_timeout(std::time::Duration::from_secs(5)),
                 ) // Replace with runtime::Tokio if using async main
-                .with_trace_config(opentelemetry_sdk::trace::config().with_resource(
-                    opentelemetry_sdk::Resource::new(vec![opentelemetry::KeyValue::new(
-                        "service.name",
-                        otlp_service_name,
-                    )]),
-                ))
+                .with_trace_config(
+                    opentelemetry_sdk::trace::config()
+                        .with_sampler(CustomSampler {})
+                        .with_resource(opentelemetry_sdk::Resource::new(vec![
+                            opentelemetry::KeyValue::new("service.name", otlp_service_name),
+                        ])),
+                )
                 .install_batch(opentelemetry_sdk::runtime::Tokio)
                 .unwrap();
 
