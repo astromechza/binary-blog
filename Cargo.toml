@@ -12,13 +12,13 @@ pulldown-cmark = "0.10"
 lazy_static = "1.4"
 convert_case = "0.6"
 h2 = "0.4"
-hyper = "0.14"
+hyper = "1.2"
 maud = { version = "0.26", features = ["axum"] }
-axum = { version = "0.6", features = ["http2"] }
+axum = { version = "0.7", features = ["http2"] }
 time = { version = "0.3", features = ["macros", "formatting", "parsing"] }
 tokio = { version = "1", features = ["full"] }
 tower = { version = "0.4", features = [] }
-tower-http = { version = "0.4", features = ["trace"] }
+tower-http = { version = "0.5", features = ["trace"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 rust-embed = "6.6"
@@ -29,6 +29,7 @@ opentelemetry-otlp = { version = "0.15" , default-features = false, features = [
 opentelemetry = { version = "0.22" , default-features = false, features = ["trace"]}
 opentelemetry_sdk = { version = "0.22" , default-features = false, features = ["trace", "rt-tokio"]}
 reqwest = "0.11"
+http-body-util = "0.1.1"
 
 [dev-dependencies]
 test-case = "3.2"

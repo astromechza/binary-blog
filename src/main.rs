@@ -939,9 +939,13 @@ async fn main() {
 
     let app = setup_router(args.external_url_prefix.clone().unwrap_or("".to_string()))
         .into_make_service();
-    let svr = axum::Server::bind(&addr).serve(app);
+    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    tracing::info!(
+        "server is listening on http://{}...",
+        listener.local_addr().unwrap()
+    );
+    let svr = axum::serve(listener, app);
 
-    tracing::info!("server is listening on http://{}...", svr.local_addr());
     if let Err(err) = svr.await {
         tracing::error!("server error: {}", err);
     }
@@ -952,6 +956,7 @@ mod tests {
     use axum::body::Body;
     use axum::http::header::{ACCEPT, CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE, ETAG};
     use axum::http::{HeaderValue, Method, Request, StatusCode};
+    use http_body_util::BodyExt;
     use hyper::header::{ACCEPT_ENCODING, CONTENT_ENCODING, LOCATION};
     // for `oneshot` and `ready`
     use test_case::test_case;
@@ -1230,8 +1235,8 @@ mod tests {
             assert!(resp.headers().get(ETAG).is_some());
             assert_eq!(resp.headers().get(CACHE_CONTROL).unwrap(), "max-age=300");
 
-            let body = hyper::body::to_bytes(resp.into_body()).await.unwrap();
-            let body_str = String::from_utf8_lossy(body.as_ref());
+            let bod = resp.into_body().collect().await.unwrap().to_bytes().clone();
+            let body_str = String::from_utf8_lossy(bod.as_ref());
             let links: Vec<&str> = link_re
                 .find_iter(body_str.as_ref())
                 .filter(|m| !m.as_str().contains("://"))
