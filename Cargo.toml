@@ -14,7 +14,7 @@ convert_case = "0.6"
 h2 = "0.4"
 hyper = "0.14"
 maud = { version = "0.26", features = ["axum"] }
-axum = { version = "0.6", features = ["http2"] }
+axum = { version = "0.7", features = ["http2"] }
 time = { version = "0.3", features = ["macros", "formatting", "parsing"] }
 tokio = { version = "1", features = ["full"] }
 tower = { version = "0.4", features = [] }
