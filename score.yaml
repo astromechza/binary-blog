@@ -1,0 +1,30 @@
+apiVersion: score.dev/v1b1
+metadata:
+  name: binary-blog
+containers:
+  web:
+    image: .
+    variables:
+      HONEYCOMB_KEY_PATH: /honeycomb/key
+      # MUST set EXTERNAL_URL_SCHEME to http:// or https:// depending on external LB
+      # MAY set EXTERNAL_URL_PORT to :8080 if an LB is being used
+      EXTERNAL_URL_PREFIX: ${resources.env.EXTERNAL_URL_SCHEME}${resources.dns.host}${resources.env.EXTERNAL_URL_PORT}
+    files:
+      - target: /honeycomb/key
+        content: ${resources.env.HONEYCOMB_KEY}
+        mode: "0644"
+service:
+  ports:
+    web:
+      port: 8080
+resources:
+  env:
+    type: environment
+  dns:
+    type: dns
+  route:
+    type: route
+    params:
+      host: ${resources.dns.host}
+      port: 8080
+      path: /

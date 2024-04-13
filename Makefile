@@ -18,6 +18,13 @@ help:
 $(WEBP_FILES): $(basename $@)
 	cwebp $(basename $@) -o $@ -q 80
 
+.score-compose/:
+	score-compose init
+
+compose.yaml: score.yaml .score-compose/
+	# TODO: get rid of this override prop here
+	score-compose generate score.yaml --build web=. --override-property=resources.route.params.host=localhost
+
 # ------------------------------------------------------------------------------
 # PHONY TARGETS
 # ------------------------------------------------------------------------------
@@ -28,3 +35,18 @@ $(WEBP_FILES): $(basename $@)
 ## Generate webp variants of all images
 .PHONY: generate-webp
 generate-webp: $(WEBP_FILES)
+
+## Check and test
+.PHONY: test
+test:
+	cargo check && cargo fmt && cargo test
+
+## Build development binaries
+.PHONY: build
+build:
+	cargo build
+
+## Setup and launch locally using score-compose
+.PHONY: launch
+launch: compose.yaml
+	EXTERNAL_URL_SCHEME=http:// EXTERNAL_URL_PORT=:8080 docker compose up --build

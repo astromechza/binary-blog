@@ -9,3 +9,5 @@
 
 /target
 /honeycomb.key
+.score-compose/
+compose.yaml
