@@ -52,5 +52,5 @@ jobs:
         curl https://api.humanitec.io/orgs/${{ secrets.HUMANITEC_ORG }}/artefact-versions \
           -H "Authorization: Bearer ${{ secrets.HUMANITEC_TOKEN }}" \
           -F type=workload -F name=github.com/astromechza/binary-blog \
-          -F ref=${{ github.ref }} -F spec=@score.yaml -F commit=${{ context.sha }} \
+          -F ref=${{ github.ref }} -F spec=@score.yaml -F commit=${{ github.sha }} \
           -F image=astromechza/binary-blog:${{ steps.semver.outputs.version }}
