@@ -21,6 +21,10 @@ $(WEBP_FILES): $(basename $@)
 .score-compose/:
 	score-compose init
 
+compose.yaml: score.yaml .score-compose/
+	# TODO: get rid of this override prop here
+	score-compose generate score.yaml --build web=. --override-property=resources.route.params.host=localhost
+
 # ------------------------------------------------------------------------------
 # PHONY TARGETS
 # ------------------------------------------------------------------------------
@@ -44,7 +48,5 @@ build:
 
 ## Setup and launch locally using score-compose
 .PHONY: launch
-launch: .score-compose/
-	# TODO: get rid of this override prop here
-	score-compose generate score.yaml --build web=. --override-property=resources.route.params.host=localhost
+launch: compose.yaml
 	EXTERNAL_URL_SCHEME=http:// EXTERNAL_URL_PORT=:8080 docker compose up --build
