@@ -46,34 +46,11 @@ jobs:
         context: .
         push: ${{ github.ref == 'refs/heads/main' }}
         tags: docker.io/astromechza/binary-blog:${{ steps.semver.outputs.version }}
-    - name: Add version to chart
-      run: sed -i 's/0.0.0/${{ steps.semver.outputs.version }}/g' chart/Chart.yaml
-    - name: Package the chart
-      run: tar -czvf binary-blog-${{ steps.semver.outputs.version }}.tgz -C chart .
-    - name: Set up Helm
-      uses: azure/setup-helm@v3
-      with:
-        version: v3.11.2
-    - name: Lint chart
-      run: helm lint binary-blog-${{ steps.semver.outputs.version }}.tgz
-    - name: Attempt to template with defaults
-      run: helm template test binary-blog-${{ steps.semver.outputs.version }}.tgz
-    - name: Create tag
+    - name: Upload artefact version
       if: github.ref == 'refs/heads/main'
-      uses: actions/github-script@v5
-      with:
-        script: |
-          github.rest.git.createRef({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            ref: "refs/tags/${{ steps.semver.outputs.version_tag }}",
-            sha: context.sha
-          })
-    - name: Release tag
-      if: github.ref == 'refs/heads/main'
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: ${{ steps.semver.outputs.version_tag }}
-        files: |
-          binary-blog-${{ steps.semver.outputs.version }}.tgz
-          
+      run: |
+        curl https://api.humanitec.io/orgs/${{ secrets.HUMANITEC_ORG }}/artefact-versions \
+          -H "Authorization: Bearer ${{ secrets.HUMANITEC_TOKEN }}" \
+          -F type=workload -F name=github.com/astromechza/binary-blog \
+          -F ref=${{ github.ref }} -F spec=@score.yaml -F commit=${{ context.sha }} \
+          -F image=astromechza/binary-blog:${{ steps.semver.outputs.version }}

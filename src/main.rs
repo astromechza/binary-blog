@@ -882,12 +882,17 @@ impl ShouldSample for CustomSampler {
 
 #[tokio::main]
 async fn main() {
-    let args = Cli::parse();
-
+    let mut args = Cli::parse();
+    if args.external_url_prefix.is_none() {
+        args.external_url_prefix = match std::env::var("EXTERNAL_URL_PREFIX") {
+            Ok(v) => Some(v),
+            Err(_) => None,
+        }
+    }
     let honeycomb_key_path =
         std::env::var("HONEYCOMB_KEY_PATH").unwrap_or_else(|_| "honeycomb.key".to_string());
     match std::fs::read_to_string(honeycomb_key_path) {
-        Ok(api_key) => {
+        Ok(api_key) if !api_key.trim().is_empty() => {
             let otlp_endpoint = "https://api.honeycomb.io";
             let otlp_headers =
                 HashMap::from([("x-honeycomb-team".into(), api_key.trim().to_string())]);
@@ -925,6 +930,10 @@ async fn main() {
             tracing::subscriber::set_global_default(subscriber)
                 .expect("failed to set tracing subscriber");
             tracing::info!("set up honeycomb tracing");
+        }
+        Ok(_) => {
+            tracing_subscriber::fmt::init();
+            tracing::info!("honeycomb key file is empty");
         }
         Err(e) => {
             tracing_subscriber::fmt::init();
