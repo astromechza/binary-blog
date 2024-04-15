@@ -12,7 +12,6 @@ containers:
     files:
       - target: /honeycomb/key
         content: ${resources.env.HONEYCOMB_KEY}
-        mode: "0644"
 service:
   ports:
     web:
