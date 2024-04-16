@@ -431,7 +431,7 @@ fn pre_render_rss(posts: &Vec<Post>, external_url_prefix: &String) -> Cow<'stati
                 link { (external_url_prefix) "/" }
                 (PreEscaped("<atom:link rel=\"self\" href=\""))
                 (PreEscaped(external_url_prefix))
-                (PreEscaped("/rss.xml\" />"))
+                (PreEscaped("/feed.xml\" />"))
                 language { "en" }
                 description { "I'm a software engineer working mostly on distributed systems with an interest in security, networking, correctness, and chaos." }
                 @for x in posts.iter() {
